@@ -27,12 +27,15 @@ def capture_live(
         bpf_filter: Optional BPF expression, e.g. "tcp or udp".
     """
 
-    sniff(
-        iface=interface,
-        filter=bpf_filter,
-        prn=packet_handler,
-        store=False,
-    )
+    sniff_kwargs = {
+        "iface": interface,
+        "prn": packet_handler,
+        "store": False,
+    }
+    if bpf_filter:
+        sniff_kwargs["filter"] = bpf_filter
+
+    sniff(**sniff_kwargs)
 
 
 def capture_offline(packet_handler: PacketHandler, pcap_path: str) -> None:
