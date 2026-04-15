@@ -1,0 +1,512 @@
+\documentclass[10pt,journal]{IEEEtran}
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{siunitx}
+\usepackage{url}
+\usepackage[hidelinks]{hyperref}
+
+\title{Unified Gradient-Boosted Intrusion Detection on Large-Scale CIC Traffic: Binary Detection and Multi-Class Attack Family Classification}
+
+\author{Author~Name
+\thanks{This manuscript is a reproducibility-oriented report generated from an executable notebook workflow. Replace author and affiliation details before submission.}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Network intrusion detection systems must simultaneously maximize attack catch rate and provide actionable attack-type attribution. This paper reports a large-scale machine learning study based on a unified gradient boosting pipeline trained on a harmonized CIC traffic corpus (2017--2019), containing \num{9167581} flow records and 59 tabular features. Two tasks are solved using identical train/validation/test partitions: (i) binary anomaly detection (Benign vs. Attack), and (ii) 8-class attack family classification (Benign, DDoS, DoS, Botnet, Bruteforce, Infiltration, Portscan, Webattack). LightGBM and XGBoost are evaluated under class-imbalance-aware training. For binary detection, both models achieve very high discrimination: LightGBM test AUC \num{0.99656}, F1 \num{0.97228}, Recall \num{0.95832}, Precision \num{0.98665}; XGBoost test AUC \num{0.99675}, F1 \num{0.97121}, Recall \num{0.95865}, Precision \num{0.98410}. For multi-class classification, LightGBM attains Macro F1 \num{0.77997} and Weighted F1 \num{0.87339}, while XGBoost achieves Macro F1 \num{0.74524} and Weighted F1 \num{0.87223}. Results show strong binary detection performance and competitive multi-class attribution, with persistent degradation on rare attack families due to extreme class imbalance. We discuss implications for operational deployment, threshold tuning, and hierarchy-aware post-processing.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Intrusion Detection, Network Security, Gradient Boosting, LightGBM, XGBoost, Class Imbalance, Multi-Class Classification, CIC-IDS.
+\end{IEEEkeywords}
+
+\section{Introduction}
+Modern enterprise and cloud networks require detection pipelines that are both sensitive (few missed attacks) and informative (attack-type context for triage). Classical signature-based IDS tools remain useful but can fail under novel or evolving attacks. As a result, supervised machine learning over network flow features has become a practical complement in many SOC and SIEM environments.
+
+Two operational objectives frequently conflict. First, binary attack detection demands high recall and robust ranking under heavily imbalanced traffic. Second, multi-class attack attribution must preserve performance on rare classes, where minority groups can be statistically underrepresented by orders of magnitude. In this work, we evaluate whether a single, consistent gradient boosting pipeline can support both objectives at scale.
+
+This study is based on a reproducible notebook implementation over a combined CIC traffic collection spanning 2017--2019. The resulting dataset is large enough to stress memory, class balance, and training-time concerns typical of real deployments.
+
+\subsection{Contributions}
+The main contributions of this report are:
+\begin{itemize}
+\item A unified dual-task formulation on \num{9.17} million flows with shared stratified partitions for fair binary/multi-class comparison.
+\item A documented preprocessing workflow including schema normalization, data quality checks, and memory-aware downcasting.
+\item Side-by-side LightGBM/XGBoost evaluation with explicit imbalance handling.
+\item Quantitative analysis of global metrics and per-class behavior, including failure modes on minority classes.
+\end{itemize}
+
+\section{Related Work}
+Tree-ensemble methods remain strong baselines for structured security telemetry. XGBoost introduced scalable second-order gradient boosting with regularized objective design and has been widely adopted in IDS settings \cite{chen2016xgboost}. LightGBM improved throughput and memory behavior through histogram-based learning and leaf-wise tree growth \cite{ke2017lightgbm}, often producing superior quality-time trade-offs on high-volume tabular datasets.
+
+In intrusion detection research, the CIC benchmark family has become common for ML experimentation, including binary and multi-class tasks \cite{sharafaldin2018toward}. Recent studies increasingly emphasize not only aggregate accuracy but also class-aware metrics and operationally aligned evaluation under heavy imbalance \cite{ring2019survey}. Hyperparameter optimization frameworks such as Optuna provide efficient black-box tuning for boosting methods in this context \cite{akiba2019optuna}.
+
+\section{Dataset and Problem Definition}
+\subsection{Data Source}
+The notebook uses a harmonized CIC collection (2017/DoS2017/2018/2019) distributed through Kaggle and sourced from the Canadian Institute for Cybersecurity \cite{cicdatasets, kaggleciccollection}. Each row is a labeled bidirectional flow summary.
+
+\subsection{Dataset Scale and Split}
+Table~\ref{tab:dataset_summary} summarizes key scale values extracted from the executed notebook outputs.
+
+\begin{table}[!t]
+\caption{Dataset and Split Summary}
+\label{tab:dataset_summary}
+\centering
+\begin{tabular}{l r}
+\toprule
+Total rows & \num{9167581} \\
+Total columns (post-cleaning) & 59 \\
+Train rows & \num{6417306} \\
+Validation rows & \num{1375137} \\
+Test rows & \num{1375138} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Class Composition}
+The corpus is strongly imbalanced. Multi-class proportions are shown in Table~\ref{tab:class_dist}. Binary relabeling yields 78.39\% benign and 21.61\% attack traffic.
+
+\begin{table}[!t]
+\caption{Multi-Class Distribution (\% of Full Dataset)}
+\label{tab:class_dist}
+\centering
+\begin{tabular}{l r}
+\toprule
+Class & Proportion (\%) \\
+\midrule
+Benign & 78.39 \\
+DDoS & 13.47 \\
+DoS & 4.33 \\
+Botnet & 1.59 \\
+Bruteforce & 1.13 \\
+Infiltration & 1.03 \\
+Webattack & 0.03 \\
+Portscan & 0.02 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Task Formulation}
+Two supervised tasks are solved on shared feature matrices:
+\begin{itemize}
+\item \textbf{Binary detection}: $y \in \{0,1\}$ where 0 = Benign and 1 = Attack.
+\item \textbf{Multi-class attribution}: $y \in \{0,\dots,7\}$ using label encoding for 8 families.
+\end{itemize}
+
+The notebook label map is:
+\begin{equation*}
+\begin{aligned}
+\{&\text{Benign}:0,\ \text{Botnet}:1,\ \text{Bruteforce}:2,\ \text{DDoS}:3,\\
+ &\text{DoS}:4,\ \text{Infiltration}:5,\ \text{Portscan}:6,\ \text{Webattack}:7\}.
+\end{aligned}
+\end{equation*}
+
+\section{Methodology}
+\subsection{Preprocessing Pipeline}
+The preprocessing sequence is intentionally simple and production-oriented:
+\begin{enumerate}
+\item Normalize column names to lowercase snake-style tokens.
+\item Replace infinite values with NaN and drop NaN rows when present.
+\item Remove constant features (none removed in this run).
+\item Downcast numeric types (e.g., float64 to float32) to reduce memory pressure.
+\end{enumerate}
+
+Notebook output confirms zero missing and zero infinite values after checks. The implementation notes indicate an approximate memory reduction from \textasciitilde3.6 GB to \textasciitilde2.8 GB through downcasting.
+
+\subsection{Imbalance Handling}
+For binary LightGBM/XGBoost, class weighting uses:
+\begin{equation}
+\text{scale\_pos\_weight} = \frac{N_{\text{negative}}}{N_{\text{positive}}} = 3.63.
+\end{equation}
+
+For multi-class training, balanced class weights are computed and applied as per-sample weights:
+\begin{equation}
+w_c = \frac{N}{K\cdot n_c},
+\end{equation}
+where $N$ is total samples, $K$ is number of classes, and $n_c$ is class-$c$ frequency.
+
+\subsection{Models and Training Setup}
+\textbf{LightGBM (binary)}: objective \texttt{binary}, metric AUC, learning rate 0.05, \texttt{num\_leaves}=31, \texttt{min\_child\_samples}=20, subsampling 0.8/0.8, 2000 rounds, early stopping 50. Output indicates no early stop reached, best validation AUC at iteration 2000.
+
+\textbf{XGBoost (binary)}: objective \texttt{binary:logistic}, metric AUC, learning rate 0.05, \texttt{max\_depth}=8, \texttt{min\_child\_weight}=20, subsampling 0.8/0.8, 2000 rounds with early stopping callback. Validation AUC converges to \textasciitilde0.99679 by late rounds.
+
+\textbf{LightGBM (multi-class)}: objective \texttt{multiclass}, \texttt{num\_class}=8, metric \texttt{multi\_logloss}, learning rate 0.05, \texttt{num\_leaves}=128, weighted samples, 2000 max rounds, early stopping 50. Best iteration reported at 76 with validation logloss 0.122398.
+
+\textbf{XGBoost (multi-class)}: objective \texttt{multi:softprob}, metric \texttt{mlogloss}, learning rate 0.05, \texttt{max\_depth}=8, weighted DMatrix, 2000 max rounds, early stopping 50. Logged validation logloss approaches \textasciitilde0.114 in the 250--283 range.
+
+Table~\ref{tab:hparams} summarizes the explicit training settings captured in the notebook.
+
+\begin{table*}[!t]
+\caption{Model Configuration Used in the Notebook}
+\label{tab:hparams}
+\centering
+\begin{tabular}{l l l}
+\toprule
+Task & LightGBM & XGBoost \\
+\midrule
+Binary objective & \texttt{binary} & \texttt{binary:logistic} \\
+Primary metric & AUC & AUC \\
+Learning rate & 0.05 & 0.05 \\
+Tree complexity & \texttt{num\_leaves}=31, \texttt{max\_depth}=-1 & \texttt{max\_depth}=8, \texttt{min\_child\_weight}=20 \\
+Sampling & \texttt{subsample}=0.8, \texttt{colsample\_bytree}=0.8 & \texttt{subsample}=0.8, \texttt{colsample\_bytree}=0.8 \\
+Imbalance handling & \texttt{scale\_pos\_weight}=3.63 & \texttt{scale\_pos\_weight}=3.63 \\
+Boost rounds & 2000 (best at 2000) & 2000 (AUC stabilizes near late rounds) \\
+Early stopping & 50 rounds & 50 rounds \\
+\midrule
+Multi-class objective & \texttt{multiclass}, \texttt{num\_class}=8 & \texttt{multi:softprob}, \texttt{num\_class}=8 \\
+Primary metric & \texttt{multi\_logloss} & \texttt{mlogloss} \\
+Learning rate & 0.05 & 0.05 \\
+Tree complexity & \texttt{num\_leaves}=128, \texttt{max\_depth}=-1 & \texttt{max\_depth}=8, \texttt{min\_child\_weight}=20 \\
+Imbalance handling & class-weighted samples & weighted DMatrix \\
+Boost rounds & early stop at iter 76 (best val logloss 0.122398) & monitored to 283+ rounds (val logloss \textasciitilde0.114) \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\subsection{Metrics}
+Binary metrics:
+\begin{equation}
+\text{Precision}=\frac{TP}{TP+FP},\quad
+\text{Recall}=\frac{TP}{TP+FN},
+\end{equation}
+\begin{equation}
+F_1 = 2\cdot\frac{\text{Precision}\cdot\text{Recall}}{\text{Precision}+\text{Recall}}.
+\end{equation}
+AUC-ROC is used for threshold-independent ranking quality.
+
+Multi-class metrics include Macro F1 and Weighted F1:
+\begin{equation}
+F_1^{\text{macro}} = \frac{1}{K}\sum_{c=1}^{K} F_{1,c},\quad
+F_1^{\text{weighted}} = \sum_{c=1}^{K} \frac{n_c}{N}F_{1,c}.
+\end{equation}
+
+\subsection{Implementation and Hardware Notes}
+The notebook probes GPU availability via \texttt{nvidia-smi}, reporting GPU presence in the execution environment. In the captured run, XGBoost uses CUDA histogram training for both binary and multi-class tasks, while the binary LightGBM run is explicitly configured to CPU in the final training cell. This mixed-device behavior is useful to report because it influences both wall-clock training time and deployment portability.
+
+\subsection{Complexity Perspective}
+For histogram gradient boosting, one training iteration scales approximately with
+\begin{equation}
+\mathcal{O}(N\cdot F\cdot B),
+\end{equation}
+where $N$ is rows, $F$ features, and $B$ histogram bins (implementation dependent). With $N \approx 9.17\times 10^6$ and dozens of features, memory traffic and split-search efficiency dominate practical runtime. This motivates the notebook design choice to downcast numeric dtypes and to keep feature engineering mostly flow-native rather than expanding dimensionality aggressively.
+
+\section{Convergence and Training Dynamics}
+The recorded logs show smooth and monotonic quality improvement in both binary learners. For LightGBM binary, validation AUC rises from roughly 0.99 at early rounds to 0.996586 at round 2000, without triggering early stopping. For XGBoost binary, validation AUC similarly climbs to 0.99679 near rounds 1900--1999.
+
+For multi-class training, LightGBM reaches its best validation logloss earlier (iteration 76), while XGBoost continues gradual improvement over a larger horizon. This pattern is consistent with boosted-tree behavior under weighted minority classes: after early gains on dominant decision boundaries, late iterations allocate capacity to harder, sparse regions.
+
+\begin{table}[!t]
+\caption{Validation Convergence Snapshots from Logs}
+\label{tab:convergence}
+\centering
+\begin{tabular}{l l l}
+\toprule
+Model & Logged point & Value \\
+\midrule
+LightGBM binary & iter 2000, val AUC & 0.996586 \\
+XGBoost binary & iter 1999, val AUC & 0.99679 \\
+LightGBM multi-class & best iter 76, val logloss & 0.122398 \\
+XGBoost multi-class & iter 250, val logloss & 0.11382 \\
+XGBoost multi-class & iter 283, val logloss & 0.11415 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Experimental Results}
+\subsection{Binary Detection}
+Table~\ref{tab:binary_test} reports held-out test metrics from the notebook comparison output.
+
+\begin{table}[!t]
+\caption{Binary Test Performance (Attack vs. Benign)}
+\label{tab:binary_test}
+\centering
+\begin{tabular}{l cc}
+\toprule
+Metric & LightGBM & XGBoost \\
+\midrule
+AUC & 0.99656 & 0.99675 \\
+F1-score & 0.97228 & 0.97121 \\
+Recall & 0.95832 & 0.95865 \\
+Precision & 0.98665 & 0.98410 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Validation snapshots were similarly high:
+\begin{itemize}
+\item LightGBM: Validation AUC 0.99659, Recall 0.95813.
+\item XGBoost: Validation AUC 0.99679, Recall 0.95847, Precision 0.98488, F1 0.97149.
+\end{itemize}
+
+\textbf{Observation.} Both models are effectively tied in operational recall. XGBoost yields marginally higher AUC, while LightGBM slightly improves precision and F1 on the final test split.
+
+\subsection{Approximate Confusion-Matrix View at Fixed Threshold}
+Because the notebook reports precision/recall and test support, we can estimate confusion-matrix magnitudes for practical interpretation. The multi-class supports imply binary test totals of 1,077,929 benign and 297,209 attack samples.
+
+Using reported test recall and precision:
+\begin{itemize}
+\item \textbf{LightGBM} approximately yields $TP\approx284.8$k and $FN\approx12.4$k, with $FP\approx3.9$k.
+\item \textbf{XGBoost} approximately yields $TP\approx284.9$k and $FN\approx12.3$k, with $FP\approx4.6$k.
+\end{itemize}
+
+These approximations reinforce a deployment-relevant point: both models miss a similar number of attacks at the current threshold, but LightGBM is somewhat more conservative in false alarms.
+
+\subsection{Multi-Class Attribution}
+Table~\ref{tab:multi_overall} summarizes aggregate multi-class performance.
+
+\begin{table}[!t]
+\caption{Multi-Class Overall Performance}
+\label{tab:multi_overall}
+\centering
+\begin{tabular}{l cc}
+\toprule
+Metric & LightGBM & XGBoost \\
+\midrule
+Macro F1 & 0.77997 & 0.74524 \\
+Weighted F1 & 0.87339 & 0.87223 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Weighted F1 is close between models; however, LightGBM shows a clear Macro F1 advantage, indicating better behavior on less frequent classes.
+
+\subsection{Per-Class Behavior}
+Table~\ref{tab:per_class} highlights class-level F1 and recall (test split support in the last column).
+
+\begin{table}[!t]
+\caption{Per-Class Comparison (Test Split)}
+\label{tab:per_class}
+\centering
+\begin{tabular}{l c c c c r}
+\toprule
+\multirow{2}{*}{Class} & \multicolumn{2}{c}{LightGBM} & \multicolumn{2}{c}{XGBoost} & \multirow{2}{*}{Support} \\
+ & Recall & F1 & Recall & F1 & \\
+\midrule
+Benign & 0.74 & 0.85 & 0.74 & 0.85 & 1,077,929 \\
+Botnet & 1.00 & 0.99 & 1.00 & 0.99 & 21,882 \\
+Bruteforce & 1.00 & 1.00 & 1.00 & 1.00 & 15,347 \\
+DDoS & 1.00 & 1.00 & 1.00 & 1.00 & 185,758 \\
+DoS & 1.00 & 1.00 & 1.00 & 0.99 & 59,269 \\
+Infiltration & 0.95 & 0.09 & 0.95 & 0.09 & 14,152 \\
+Portscan & 0.95 & 0.80 & 0.98 & 0.69 & 353 \\
+Webattack & 0.98 & 0.51 & 0.98 & 0.35 & 448 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Interpretation.} High recall but very low precision for Infiltration indicates substantial false positive contamination for that class. Similar behavior is visible for Webattack, where recall remains high but precision is poor, especially in XGBoost. These effects are typical under severe minority imbalance and overlapping feature manifolds.
+
+\subsection{Minority-Class Error Profile}
+The two classes with smallest support (Portscan and Webattack) illustrate opposite priorities:
+\begin{itemize}
+\item Recall remains very high (0.95--0.98), indicating low miss rate.
+\item Precision degrades substantially (e.g., Webattack precision 0.35 in LightGBM and 0.22 in XGBoost), indicating frequent over-assignment to rare labels.
+\end{itemize}
+
+For a SOC context, this means class predictions for these tails should be consumed as \emph{triage hints} rather than definitive labels unless additional calibration or post-filtering is applied.
+
+\subsection{Feature Importance}
+The notebook reports gain-based feature rankings. For binary LightGBM, prominent features include:
+\texttt{init\_bwd\_win\_bytes}, \texttt{fwd\_iat\_total}, \texttt{bwd\_iat\_min}, \texttt{init\_fwd\_win\_bytes}, and \texttt{bwd\_packets/s}. 
+
+For multi-class models, both methods strongly weight timing/header-level statistics, with repeated prominence of:
+\texttt{bwd\_header\_length}, \texttt{fwd\_packet\_length\_std}, \texttt{packet\_length\_std}, \texttt{flow\_iat\_mean}, and \texttt{init\_bwd\_win\_bytes}.
+
+This aligns with an intuitive IDS interpretation: temporal burst structure, packet variability, and initial transport-window behavior capture meaningful attack signatures in flow-level telemetry.
+
+\begin{table}[!t]
+\caption{Selected High-Gain Features Reported by the Notebook}
+\label{tab:feature_top}
+\centering
+\begin{tabular}{l l}
+\toprule
+Binary LightGBM (examples) & Multi-class consensus (examples) \\
+\midrule
+\texttt{init\_bwd\_win\_bytes} & \texttt{bwd\_header\_length} \\
+\texttt{fwd\_iat\_total} & \texttt{fwd\_packet\_length\_std} \\
+\texttt{bwd\_iat\_min} & \texttt{packet\_length\_std} \\
+\texttt{init\_fwd\_win\_bytes} & \texttt{flow\_iat\_mean} \\
+\texttt{bwd\_packets/s} & \texttt{init\_bwd\_win\_bytes} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Error Budget and Risk Framing}
+To make model outputs actionable, we separate error types into operational buckets:
+\begin{enumerate}
+\item \textbf{Missed-attack risk} (binary false negatives): impacts containment and dwell time.
+\item \textbf{Alert-load risk} (binary false positives): impacts analyst throughput.
+\item \textbf{Attribution risk} (multi-class mislabeling): impacts remediation prioritization.
+\end{enumerate}
+
+In this experiment, missed-attack and alert-load risks are both low at aggregate binary level, but attribution risk remains concentrated in minority classes. This supports a layered incident-response design where binary confidence gates high-priority alerting, and family labels are attached with class-specific confidence thresholds.
+
+\subsection{Threshold and Triage Considerations}
+The reported binary results are produced at a fixed threshold (0.5), but production IDS deployments rarely operate with a single static operating point. Let $\tau$ denote the alert threshold. In general:
+\begin{itemize}
+\item decreasing $\tau$ tends to increase recall and alert volume,
+\item increasing $\tau$ tends to reduce false alerts while increasing miss risk.
+\end{itemize}
+
+A practical policy is to maintain a high-recall primary stream and a confidence-filtered stream for automated ticket routing. The notebook's high AUC values imply that such threshold retuning can be performed with limited quality degradation because ranking quality is already strong.
+
+\subsection{Proposed Post-Processing for Minority Classes}
+The per-class report suggests that minority labels should be post-processed with explicit safeguards:
+\begin{enumerate}
+\item \textbf{Class-wise confidence floors}: require higher posterior confidence for Webattack and Infiltration labels.
+\item \textbf{One-vs-rest verification}: run a lightweight secondary verifier for low-support classes.
+\item \textbf{Top-$k$ reporting}: expose the top-2 classes for analyst review when confidence gap is small.
+\item \textbf{Temporal smoothing}: aggregate predictions across short flow windows to reduce bursty false positives.
+\end{enumerate}
+
+These controls do not require retraining and can often be integrated at inference-service level.
+
+\section{Discussion}
+\subsection{Operational Implications}
+For alerting pipelines where missed attacks are costly, both binary models provide an excellent baseline. Recall around 0.958 with AUC near 0.997 suggests reliable ranking and high sensitivity. A practical SOC deployment can still improve utility via threshold tuning and confidence calibration to control analyst load.
+
+For attack-family attribution, aggregate performance is acceptable but uneven across classes. Weighted F1 near 0.87 can hide minority fragility, so Macro F1 and class-wise precision must be monitored in production model governance.
+
+\subsection{Why LightGBM Wins Macro F1 Here}
+Two likely factors explain LightGBM's macro advantage in this run:
+\begin{itemize}
+\item Leaf-wise growth can capture minority-specific local partitions efficiently.
+\item Histogram-based split behavior may better exploit sparse discriminative patterns in selected flow statistics.
+\end{itemize}
+
+However, differences are dataset- and preprocessing-dependent; future retuning could narrow or reverse this gap.
+
+\subsection{What the Results Suggest for Model Selection}
+If the primary objective is binary alert quality, either model is acceptable and can be selected by infrastructure constraints (training stack maturity, GPU access, explainability preferences). If the objective includes robust minority-class attribution, the observed Macro F1 gap favors LightGBM in this run. A practical path is to deploy one binary detector and maintain model-level A/B testing for the second-stage classifier.
+
+\section{Reproducibility Checklist}
+To facilitate auditability and handoff, we summarize a minimal reproducibility checklist:
+\begin{itemize}
+\item Preserve exact train/validation/test index splits across both tasks.
+\item Store feature schema after column normalization and dtype downcasting.
+\item Persist model artifacts and feature-importance exports alongside notebook output.
+\item Log GPU/CPU mode explicitly per training cell.
+\item Record threshold values used for reporting precision/recall/F1.
+\item Report both macro and weighted metrics for multi-class output.
+\item Include class supports in every per-class table to contextualize instability.
+\end{itemize}
+
+This checklist is especially important for security research where minor preprocessing mismatches can induce large metric swings on rare classes.
+
+\section{Threats to Validity and Limitations}
+\begin{itemize}
+\item \textbf{Dataset shift risk}: CIC benchmark traffic differs from live enterprise environments and may overstate transferability.
+\item \textbf{Temporal leakage concern}: Combined datasets from multiple years require careful split hygiene to prevent subtle leakage.
+\item \textbf{Flow-only features}: Payload-agnostic flow summaries improve privacy and speed, but may miss semantic attack cues.
+\item \textbf{Minority instability}: Extremely small classes (Portscan/Webattack) can produce volatile precision/recall behavior.
+\item \textbf{No latency benchmark}: This report focuses on predictive quality, not end-to-end inference throughput under streaming load.
+\end{itemize}
+
+\section{Deployment-Oriented Recommendations}
+\begin{enumerate}
+\item Use a two-stage architecture: binary detector first, then conditional multi-class attribution.
+\item Tune class-specific thresholds on validation data rather than fixed 0.5 cutoffs.
+\item Add probability calibration and uncertainty flags for rare-family predictions.
+\item Monitor drift with rolling-window recalibration and periodic retraining.
+\item Explore minority-aware augmentation (reweighting, focal objectives, constrained ensembling).
+\end{enumerate}
+
+\section{Future Work Directions}
+The notebook already demonstrates strong baseline performance. The most promising next steps are:
+\begin{itemize}
+\item \textbf{Temporal generalization}: train on earlier windows and test on later windows to stress drift.
+\item \textbf{Calibration}: apply post-hoc calibration (e.g., Platt or isotonic) separately for binary and multi-class outputs.
+\item \textbf{Hierarchical labeling}: classify Attack vs. Benign first, then subgroup attacks with tailored feature subsets.
+\item \textbf{Cost-aware learning}: optimize for weighted error costs that reflect SOC escalation policy.
+\item \textbf{Serving benchmarks}: measure throughput, latency, and memory under online inference conditions.
+\end{itemize}
+
+\section{Extended Quantitative Results}
+This section presents full per-class numeric reports from the notebook outputs to preserve fidelity and support downstream audit.
+
+\begin{table*}[!t]
+\caption{Full LightGBM Multi-Class Classification Report (Test Split)}
+\label{tab:lgb_full_report}
+\centering
+\begin{tabular}{l c c c r}
+\toprule
+Class & Precision & Recall & F1-score & Support \\
+\midrule
+Benign & 1.00 & 0.74 & 0.85 & 1,077,929 \\
+Botnet & 0.99 & 1.00 & 0.99 & 21,882 \\
+Bruteforce & 1.00 & 1.00 & 1.00 & 15,347 \\
+DDoS & 1.00 & 1.00 & 1.00 & 185,758 \\
+DoS & 0.99 & 1.00 & 1.00 & 59,269 \\
+Infiltration & 0.05 & 0.95 & 0.09 & 14,152 \\
+Portscan & 0.69 & 0.95 & 0.80 & 353 \\
+Webattack & 0.35 & 0.98 & 0.51 & 448 \\
+\midrule
+Accuracy & -- & -- & 0.80 & 1,375,138 \\
+Macro avg & 0.76 & 0.95 & 0.78 & 1,375,138 \\
+Weighted avg & 0.99 & 0.80 & 0.87 & 1,375,138 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{table*}[!t]
+\caption{Full XGBoost Multi-Class Classification Report (Test Split)}
+\label{tab:xgb_full_report}
+\centering
+\begin{tabular}{l c c c r}
+\toprule
+Class & Precision & Recall & F1-score & Support \\
+\midrule
+Benign & 1.00 & 0.74 & 0.85 & 1,077,929 \\
+Botnet & 0.98 & 1.00 & 0.99 & 21,882 \\
+Bruteforce & 1.00 & 1.00 & 1.00 & 15,347 \\
+DDoS & 1.00 & 1.00 & 1.00 & 185,758 \\
+DoS & 0.99 & 1.00 & 0.99 & 59,269 \\
+Infiltration & 0.05 & 0.95 & 0.09 & 14,152 \\
+Portscan & 0.53 & 0.98 & 0.69 & 353 \\
+Webattack & 0.22 & 0.98 & 0.35 & 448 \\
+\midrule
+Accuracy & -- & -- & 0.80 & 1,375,138 \\
+Macro avg & 0.72 & 0.95 & 0.75 & 1,375,138 \\
+Weighted avg & 0.99 & 0.80 & 0.87 & 1,375,138 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\subsection{Interpretation of Extended Tables}
+Three patterns emerge from Tables~\ref{tab:lgb_full_report} and \ref{tab:xgb_full_report}:
+\begin{itemize}
+\item Dominant classes (Benign, DDoS, DoS, Botnet, Bruteforce) are modeled very well by both learners.
+\item Tail classes exhibit high recall but unstable precision, especially Webattack.
+\item Macro-level differences between learners are driven primarily by tail precision behavior, not by majority-class shifts.
+\end{itemize}
+
+This confirms that future improvements should target minority-class decision boundaries rather than global retraining without class-aware objectives.
+
+\subsection{From Research Metrics to SOC Workflow}
+A practical ingestion workflow based on these results can be structured as:
+\begin{enumerate}
+\item Score each flow with binary detector probability.
+\item Route high-confidence attack flows directly to high-priority queue.
+\item Run multi-class attribution only on flows above binary threshold.
+\item Attach confidence and top-$k$ alternatives to analyst-facing payload.
+\item Suppress low-confidence minority labels unless corroborated by additional signals.
+\end{enumerate}
+
+This converts aggregate model quality into policy controls that are easier to monitor over time.
+
+\section{Conclusion}
+This report demonstrates that a unified gradient boosting pipeline can deliver high-quality large-scale intrusion detection across both binary and multi-class tasks on combined CIC traffic. Binary detection is near-saturated for both LightGBM and XGBoost, while multi-class results remain constrained by rare-class precision collapse despite strong recall. LightGBM offers the best overall balance in this experiment, especially in Macro F1. Future work should focus on rare-class precision improvement, temporal robustness, and calibrated deployment in online settings.
+
+\section*{Reproducibility Notes}
+All numeric values in tables were extracted from stored notebook outputs of the referenced workflow. The manuscript is designed as a direct transformation from executable experimentation to submission-style IEEE reporting.
+
+\bibliographystyle{IEEEtran}
+\bibliography{ieee_nids_refs}
+
+\end{document}
