@@ -6,6 +6,7 @@ import argparse
 import os
 import signal
 import sys
+import threading
 from typing import Dict, Optional
 
 from rich.console import Console
@@ -33,8 +34,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--model-path",
         type=str,
-        default="model/lgbm_model.pkl",
-        help="Path to pickled LightGBM model",
+        default=None,
+        help="Path to pickled LightGBM model (default: model/lgbm_binary_model.pkl for binary, model/lgbm_multiclass_model.pkl for multiclass)",
     )
     parser.add_argument(
         "--features-path",
@@ -105,7 +106,12 @@ def run(args: argparse.Namespace) -> int:
         return 0
 
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    model_path = _resolve_path(args.model_path, base_dir)
+    model_path = _resolve_path(
+        args.model_path
+        if args.model_path
+        else ("model/lgbm_binary_model.pkl" if args.mode == "binary" else "model/lgbm_multiclass_model.pkl"),
+        base_dir,
+    )
     features_path = _resolve_path(args.features_path, base_dir)
     label_encoder_path = _resolve_path(args.label_encoder_path, base_dir)
     log_path = _resolve_path(args.log_file, base_dir)
@@ -127,10 +133,12 @@ def run(args: argparse.Namespace) -> int:
     alerts = AlertManager(log_path=log_path, high_traffic_threshold_per_min=1000)
 
     running = True
+    stop_event = threading.Event()
 
     def _signal_handler(signum: int, frame: Optional[object]) -> None:
         nonlocal running
         running = False
+        stop_event.set()
         console.print("\nStopping capture and flushing flows...")
 
     signal.signal(signal.SIGINT, _signal_handler)
@@ -168,11 +176,12 @@ def run(args: argparse.Namespace) -> int:
             f"interface={args.interface} mode={args.mode} threshold={args.threshold}"
         )
         console.print("Tip: Linux live capture typically requires sudo/root.")
-        capture_live(packet_handler, interface=args.interface, bpf_filter=args.bpf)
+        capture_live(packet_handler, interface=args.interface, bpf_filter=args.bpf, stop_event=stop_event)
 
     for flow_record in flow_builder.flush_all():
         handle_completed_flow(flow_record)
 
+    alerts.close()
     console.print("Detection session complete.")
     return 0
 

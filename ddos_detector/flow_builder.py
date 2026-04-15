@@ -278,7 +278,9 @@ class FlowAccumulator:
             self.previous_packet_ts = ts
             return
 
-        assert self.previous_packet_ts is not None
+        if self.previous_packet_ts is None:
+            self.previous_packet_ts = ts
+            return
         gap = ts - self.previous_packet_ts
         if gap > self.active_gap_threshold:
             active_dur = max(0.0, self.previous_packet_ts - self.current_active_start)
@@ -307,7 +309,9 @@ class FlowAccumulator:
             state.byte_count = payload_len
             return
 
-        assert state.last_ts is not None
+        if state.last_ts is None:
+            self._close_bulk_if_needed(state)
+            return
         if ts - state.last_ts <= 1.0:
             state.packet_count += 1
             state.byte_count += payload_len
@@ -589,15 +593,15 @@ class FlowBuilder:
 
     def flush_all(self) -> List[Dict[str, object]]:
         """Export and clear all active flows."""
-        records = [self._export_key(key) for key in list(self._flows.keys())]
+        keys = list(self._flows.keys())
+        records = [self._export_key(key) for key in keys]
         return records
 
     def _export_timed_out(self, now_ts: float) -> List[Dict[str, object]]:
-        expired: List[FlowKey] = []
-        for key, flow in self._flows.items():
-            if now_ts - flow.last_seen >= self.timeout_seconds:
-                expired.append(key)
-
+        expired: List[FlowKey] = [
+            key for key, flow in self._flows.items()
+            if now_ts - flow.last_seen >= self.timeout_seconds
+        ]
         return [self._export_key(key) for key in expired]
 
     def _export_key(self, key: FlowKey) -> Dict[str, object]:

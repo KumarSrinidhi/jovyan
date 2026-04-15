@@ -1,0 +1,44 @@
+services:
+
+  # ── Offline smoke test (no privileges needed) ────────────────────────────────
+  offline:
+    build: .
+    image: ddos-detector:latest
+    volumes:
+      - ./model:/app/model:ro
+      - ./logs:/app/logs
+    command: >
+      --pcap windows_smoke_test.pcap
+      --mode binary
+      --threshold 0.5
+      --log-file logs/flows_log_offline.csv
+
+  # ── Live capture (requires host network + packet capture capability) ─────────
+  # Usage: docker compose run --rm live --interface eth0 --mode binary
+  live:
+    build: .
+    image: ddos-detector:latest
+    network_mode: host
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    user: root
+    volumes:
+      - ./model:/app/model:ro
+      - ./logs:/app/logs
+    command: >
+      --interface eth0
+      --mode binary
+      --threshold 0.5
+      --log-file logs/flows_log_live.csv
+
+  # ── Training (writes artifacts back to ./model) ──────────────────────────────
+  train:
+    build: .
+    image: ddos-detector:latest
+    volumes:
+      - ./model:/app/model
+    entrypoint: ["python", "train_from_parquet.py"]
+    command: >
+      --output-dir model
+      --max-rows 300000

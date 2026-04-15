@@ -55,14 +55,21 @@ def load_dataframe(dataset: str, file_path: str) -> pd.DataFrame:
 def preprocess_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """Apply basic cleaning compatible with existing notebook workflow."""
     out = df.copy()
-    out.columns = (
-        out.columns.str.strip().str.lower().str.replace(" ", "_", regex=False).str.replace("(", "", regex=False).str.replace(")", "", regex=False)
+    # Normalize only for internal lookup; preserve original column names for feature export.
+    normalized = (
+        out.columns.str.strip().str.lower().str.replace(" ", "_", regex=False)
+        .str.replace("(", "", regex=False).str.replace(")", "", regex=False)
     )
+    # Build a mapping from normalized name to original name.
+    norm_to_orig = dict(zip(normalized, out.columns))
 
-    required = {"label", "classlabel"}
-    missing = required - set(out.columns)
+    required_normalized = {"label", "classlabel"}
+    missing = required_normalized - set(normalized)
     if missing:
         raise ValueError(f"Missing required columns: {sorted(missing)}")
+
+    # Rename using normalized names temporarily for processing.
+    out.columns = normalized
 
     numeric_cols = out.select_dtypes(include=[np.number]).columns
     out[numeric_cols] = out[numeric_cols].replace([np.inf, -np.inf], np.nan)
@@ -72,6 +79,10 @@ def preprocess_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     constant_cols = [c for c in out.columns if c not in label_cols and out[c].nunique(dropna=False) <= 1]
     if constant_cols:
         out = out.drop(columns=constant_cols)
+
+    # Restore original column names so features.json matches flow_builder FEATURE_COLUMNS.
+    remaining_norm_to_orig = {k: v for k, v in norm_to_orig.items() if k in out.columns}
+    out = out.rename(columns=remaining_norm_to_orig)
 
     return out
 
@@ -83,12 +94,17 @@ def split_data(
     val_size: float,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, LabelEncoder]:
     """Create train/val/test for both binary and multiclass tasks."""
-    y_bin = df["classlabel"].apply(lambda x: 0 if str(x) == "Benign" else 1)
+    # Find label columns by normalized name regardless of original casing.
+    norm_cols = {c.strip().lower().replace(" ", "_"): c for c in df.columns}
+    classlabel_col = norm_cols.get("classlabel", "classlabel")
+    label_col = norm_cols.get("label", "label")
+
+    y_bin = df[classlabel_col].apply(lambda x: 0 if str(x) == "Benign" else 1)
 
     le = LabelEncoder()
-    y_multi = pd.Series(le.fit_transform(df["classlabel"]), index=df.index)
+    y_multi = pd.Series(le.fit_transform(df[classlabel_col]), index=df.index)
 
-    x = df.drop(columns=["label", "classlabel"], errors="ignore")
+    x = df.drop(columns=[label_col, classlabel_col], errors="ignore")
 
     x_train, x_temp, y_train_bin, y_temp_bin = train_test_split(
         x,

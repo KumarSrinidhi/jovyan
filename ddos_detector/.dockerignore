@@ -1,0 +1,19 @@
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.venv
+venv
+env
+.env
+*.egg-info
+dist
+build
+.git
+.gitignore
+logs/
+*.csv
+*.log
+# Keep the smoke-test pcap but exclude any large captures
+!windows_smoke_test.pcap
+Work/

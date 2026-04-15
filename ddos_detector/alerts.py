@@ -7,7 +7,7 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Deque, Dict
+from typing import Deque, Dict, Optional
 
 from rich.console import Console
 from rich.panel import Panel
@@ -26,6 +26,8 @@ class AlertManager:
     def __post_init__(self) -> None:
         self.console = Console()
         self._flow_events: Deque[float] = deque()
+        self._log_file: Optional[object] = None
+        self._csv_writer: Optional[object] = None
         self._init_log()
 
     def _init_log(self) -> None:
@@ -34,12 +36,19 @@ class AlertManager:
         if str(parent) and str(parent) != ".":
             parent.mkdir(parents=True, exist_ok=True)
 
-        if path.exists():
-            return
+        write_header = not path.exists()
+        self._log_file = path.open("a", newline="", encoding="utf-8")
+        self._csv_writer = csv.DictWriter(self._log_file, fieldnames=self._csv_columns())  # type: ignore[arg-type]
+        if write_header:
+            self._csv_writer.writeheader()  # type: ignore[union-attr]
 
-        with path.open("w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=self._csv_columns())
-            writer.writeheader()
+    def close(self) -> None:
+        """Flush and close the log file."""
+        if self._log_file is not None:
+            self._log_file.flush()  # type: ignore[union-attr]
+            self._log_file.close()  # type: ignore[union-attr]
+            self._log_file = None
+            self._csv_writer = None
 
     @staticmethod
     def _csv_columns() -> list[str]:
@@ -87,10 +96,8 @@ class AlertManager:
             "packet_count": int(flow_record["packet_count"]),
             "byte_count": int(flow_record["byte_count"]),
         }
-
-        with open(self.log_path, "a", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=self._csv_columns())
-            writer.writerow(row)
+        if self._csv_writer is not None:
+            self._csv_writer.writerow(row)  # type: ignore[union-attr]
 
     def show_attack(self, flow_record: Dict[str, object], pred: PredictionResult) -> None:
         """Render a rich attack alert panel."""

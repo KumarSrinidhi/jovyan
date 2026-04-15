@@ -46,7 +46,12 @@ class LGBMFlowDetector:
     def _load_pickle(path: Optional[str]) -> Any:
         if not path:
             return None
-        with open(path, "rb") as f:
+        resolved = Path(path).resolve()
+        if not resolved.exists():
+            raise FileNotFoundError(f"Model artifact not found: {resolved}")
+        if resolved.suffix not in {".pkl", ".pickle"}:
+            raise ValueError(f"Refusing to unpickle unexpected file type: {resolved.suffix}")
+        with resolved.open("rb") as f:
             return pickle.load(f)
 
     @staticmethod

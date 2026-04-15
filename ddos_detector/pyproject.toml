@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "ddos-detector"
+version = "1.0.0"
+description = "Real-time flow-based DDoS/attack detector using LightGBM"
+requires-python = ">=3.9"
+dependencies = [
+    "scapy>=2.5.0",
+    "lightgbm>=4.0.0",
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "scikit-learn>=1.3.0",
+    "rich>=13.0.0",
+    "pyarrow>=14.0.0",
+]
+
+[project.scripts]
+ddos-detector = "ddos_detector.main:main"
+
+[tool.setuptools.packages.find]
+where = [".."]
+include = ["ddos_detector*"]

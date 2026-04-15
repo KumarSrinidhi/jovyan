@@ -18,6 +18,7 @@ def capture_live(
     packet_handler: PacketHandler,
     interface: Optional[str] = None,
     bpf_filter: Optional[str] = None,
+    stop_event: Optional[object] = None,
 ) -> None:
     """Capture packets from a live interface and forward to handler.
 
@@ -25,12 +26,17 @@ def capture_live(
         packet_handler: Callback invoked once per packet.
         interface: Interface name such as eth0, wlan0, or Wi-Fi.
         bpf_filter: Optional BPF expression, e.g. "tcp or udp".
+        stop_event: Optional threading.Event; sniff stops when set.
     """
+
+    def _stop_filter(_pkt: object) -> bool:
+        return stop_event is not None and stop_event.is_set()  # type: ignore[union-attr]
 
     sniff_kwargs = {
         "iface": interface,
         "prn": packet_handler,
         "store": False,
+        "stop_filter": _stop_filter,
     }
     if bpf_filter:
         sniff_kwargs["filter"] = bpf_filter
