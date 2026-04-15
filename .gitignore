@@ -42,4 +42,5 @@ desktop.ini
 *.swp
 
 # Docker
-ddos_detector/logs/
+ddos_detector/logs/*
+!ddos_detector/logs/.gitkeep
