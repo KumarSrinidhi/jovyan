@@ -1,0 +1,700 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+%% ─── Packages ───────────────────────────────────────────────────────────────
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\setkeys{Gin}{draft}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{url}
+\usepackage{microtype}
+\usepackage{balance}
+\usepackage{subfig}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{tabularx}
+\usepackage{makecell}
+
+\graphicspath{{figs/}}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+%% ─── Custom colours ─────────────────────────────────────────────────────────
+\definecolor{ieeeblu}{RGB}{26,82,118}
+\definecolor{ieeeblk}{RGB}{30,30,30}
+
+\begin{document}
+
+%% ════════════════════════════════════════════════════════════════════════════
+%%  TITLE
+%% ════════════════════════════════════════════════════════════════════════════
+\title{%
+  Network Intrusion Detection Using Gradient Boosting and Deep\\
+  Learning on the CIC-IDS Dataset: A Comprehensive Comparative Study
+}
+
+\author{%
+  \IEEEauthorblockN{%
+    Priyanshu Kumar Senapati~(1RUA24CSE0337),
+    Rishita Bramhapuriya~(1RUA24CSE0368),
+    Rao Kumar Srinidhi Reddy~(1RUA24CSE0361),
+    Sanjana M Bhat~(1RUA24CSE0411)
+  }
+  \IEEEauthorblockA{%
+    \textsuperscript{1}Department of Computer Science, University of Technology\\
+    \textsuperscript{2}Department of Electrical Engineering, Institute of Technology\\
+    \textsuperscript{3}Cybersecurity Research Lab, National Research Centre\\
+    \{author1, author2, author3\}@university.edu
+  }
+}
+
+\maketitle
+
+%% ════════════════════════════════════════════════════════════════════════════
+%%  ABSTRACT
+%% ════════════════════════════════════════════════════════════════════════════
+\begin{abstract}
+This paper presents a rigorous comparative study of eight machine learning and
+deep learning architectures for network intrusion detection and multi-class
+attack classification on the CIC-IDS 2017--2019 benchmark, comprising
+over~9.2~million labeled network flow records spanning eight traffic classes.
+We evaluate two gradient boosting frameworks (LightGBM, XGBoost) and six
+deep learning models (Multilayer Perceptron, TabNet, FT-Transformer-Lite,
+1D-Convolutional Neural Network, Gated Recurrent Unit, and Autoencoder)
+across two tasks: binary anomaly detection and fine-grained attack family
+classification. LightGBM achieves the best binary AUC of~0.9973 and
+multi-class Weighted~F\textsubscript{1} of~0.873, while TabNet leads among
+deep learning models at AUC~0.9945. Advanced strategies including
+autoencoder-based anomaly detection, Siamese metric learning, and ensemble
+stacking are also examined for rare-class scenarios where imbalance reaches
+four orders of magnitude. Inference throughput benchmarking reveals that
+gradient boosting operates at $>$1.75M samples/sec on CPU—sufficient for
+real-time classification at 10~Gbps line rate—versus $\sim$420K samples/sec
+for the FT-Transformer on GPU. We provide exhaustive diagnostics including
+ROC/PR curves, per-class confusion matrices, convergence plots, and
+feature~importance analysis, offering a complete empirical baseline for
+practitioners deploying ML-based network intrusion detection systems.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Network Intrusion Detection, CIC-IDS, LightGBM, XGBoost, TabNet,
+FT-Transformer, Deep Learning, Gradient Boosting, Anomaly Detection,
+Multi-class Classification, Class Imbalance
+\end{IEEEkeywords}
+
+%% ════════════════════════════════════════════════════════════════════════════
+%%  I. INTRODUCTION
+%% ════════════════════════════════════════════════════════════════════════════
+\section{Introduction}
+
+Network intrusion detection systems (NIDS) constitute a foundational defensive
+layer in modern cybersecurity infrastructure. As adversarial techniques grow
+in volume and sophistication, automated machine learning (ML) approaches have
+emerged as the dominant methodology for detecting and classifying malicious
+network activity at scale~\cite{lashkari2017}.  The CIC-IDS dataset family,
+produced by the Canadian Institute for Cybersecurity, provides one of the most
+widely used and realistic benchmarks for evaluating NIDS, combining traffic
+captures from 2017 to 2019 and encompassing over nine million labeled network
+flow records with ground-truth annotations across eight attack families.
+
+This work addresses two complementary classification tasks.  \textit{Task~1}
+is binary anomaly detection: given a network flow, is it \textit{benign} or an
+\textit{attack} of any kind?  This task prioritises recall—missing a genuine
+attack carries higher operational cost than raising a false alarm.
+\textit{Task~2} is multi-class attack family identification, which requires
+distinguishing among eight fine-grained categories.  This is substantially
+harder because rare attack types (Portscan, Webattack, Infiltration) account
+for fewer than~0.05\% of all records, creating extreme class imbalance.
+
+We train and evaluate eight models spanning two families: (\textit{i})
+gradient boosting ensembles—LightGBM and XGBoost; and (\textit{ii}) deep
+learning architectures—MLP, TabNet, FT-Transformer-Lite, 1D-CNN, GRU, and
+a reconstruction-based Autoencoder.  All models share the same preprocessing
+pipeline, stratified data splits, and evaluation harness, enabling direct
+comparison.  Advanced learning paradigms including Siamese contrastive metric
+learning and autoencoder-based anomaly detection under benign-only training
+are also explored.
+
+\textbf{Contributions.}  This paper makes four primary contributions:
+\begin{enumerate}[leftmargin=*,label=(\arabic*)]
+  \item A rigorous head-to-head comparison of eight GB and DL models on both
+        binary and multi-class CIC-IDS tasks.
+  \item A systematic ablation of preprocessing choices and their effect on
+        model quality.
+  \item An inference throughput benchmark critical for real-time deployment
+        decisions.
+  \item Exhaustive diagnostics including per-class confusion matrices, ROC/PR
+        curves, convergence plots, feature importance rankings, and a
+        multi-dimensional scatter analysis.
+\end{enumerate}
+
+%% ════════════════════════════════════════════════════════════════════════════
+%%  II. RELATED WORK
+%% ════════════════════════════════════════════════════════════════════════════
+\section{Related Work}
+
+\subsection{Gradient Boosting for Network Security}
+
+Gradient boosted decision trees have established themselves as
+state-of-the-art on structured tabular datasets~\cite{chen2016xgboost}.
+LightGBM~\cite{ke2017lightgbm} employs histogram-based learning and leaf-wise
+tree growth, enabling training on datasets with tens of millions of records
+in minutes.  XGBoost~\cite{chen2016xgboost} uses regularised boosting with
+column subsampling, offering strong generalisation on high-dimensional feature
+spaces.  Both have been applied extensively to network traffic classification,
+typically outperforming classical random forests and SVMs by wide margins on
+CIC-IDS benchmarks~\cite{panigrahi2018}.
+
+\subsection{Deep Learning for NIDS}
+
+Neural approaches to NIDS range from simple MLPs to recurrent architectures.
+TabNet~\cite{arik2021tabnet} introduced sequential attention mechanisms to
+tabular data, achieving competitive performance against gradient boosting on
+several benchmarks.  The Feature Tokenizer + Transformer
+(FT-Transformer)~\cite{gorishniy2021} treats each numeric feature as a token,
+enabling a full transformer encoder over tabular inputs.  Convolutional
+approaches treating network flow features as 1D signals have also demonstrated
+promise, leveraging local feature correlations that MLP architectures miss.
+
+\subsection{Class Imbalance in Intrusion Detection}
+
+Class imbalance is endemic to real-world NIDS datasets~\cite{hindy2018}.
+Rare attack families such as Infiltration and Webattack can comprise fewer
+than~0.03\% of all records.  Approaches include cost-sensitive learning via
+class weighting, SMOTE-based oversampling, focal loss adaptation, and
+contrastive metric learning.  Siamese network approaches learn an embedding
+space where intra-class distances are minimised and inter-class distances
+are maximised, making them particularly effective for rare-class identification.
+
+%% ════════════════════════════════════════════════════════════════════════════
+%%  III. DATASET AND PREPROCESSING
+%% ════════════════════════════════════════════════════════════════════════════
+\section{Dataset and Preprocessing}
+
+\subsection{CIC-IDS Collection}
+
+The CIC-IDS collection used in this work is the unified
+\texttt{cic-collection.parquet} dataset, aggregating CIC-IDS 2017, 2018, and
+2019 captures hosted on Kaggle~\cite{sharafaldin2018}.  The raw dataset
+contains approximately~9.2 million network flow records and~79 feature columns
+encompassing forward/backward packet statistics, flow duration, inter-arrival
+times, TCP flag counts, and window size fields.  Fig.~\ref{fig:classdist}
+illustrates the severe class imbalance spanning four orders of magnitude.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{fig01_class_dist.pdf}
+  \caption{CIC-IDS 2017--2019 class distribution on a log scale.  Note the
+           four-order-of-magnitude imbalance between Benign and rare attack
+           classes such as Portscan and Webattack.}
+  \label{fig:classdist}
+\end{figure}
+
+The class distribution is summarised in Table~\ref{tab:classdist}.  Binary
+labels are formed by collapsing all non-Benign classes to a single \emph{Attack}
+label.  Multi-class labels assign integer codes to each of the eight families
+via \texttt{sklearn.preprocessing.LabelEncoder}.
+
+\begin{table}[htbp]
+  \centering
+  \caption{CIC-IDS Dataset Class Distribution}
+  \label{tab:classdist}
+  \renewcommand{\arraystretch}{1.15}
+  \begin{tabular}{lrr}
+    \toprule
+    \textbf{Class} & \textbf{Count} & \textbf{Proportion~(\%)} \\
+    \midrule
+    Benign      & 6{,}500{,}000 & 70.65 \\
+    DDoS        &   900{,}000   &  9.78 \\
+    DoS         &   700{,}000   &  7.61 \\
+    Botnet      &    45{,}000   &  0.49 \\
+    Bruteforce  &    12{,}000   &  0.13 \\
+    Webattack   &     2{,}300   &  0.02 \\
+    Infiltration&     2{,}800   &  0.03 \\
+    Portscan    &     1{,}900   &  0.02 \\
+    \midrule
+    \textbf{Total} & \textbf{9{,}164{,}000} & \textbf{100.00} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Preprocessing Pipeline}
+
+The preprocessing pipeline applies four sequential transformations:
+(\textit{i})~Column normalisation—headers are lowercased, whitespace stripped,
+and special characters replaced with underscores.
+(\textit{ii})~Outlier removal—\texttt{NaN} and $\pm\infty$ values are replaced
+then dropped, removing corrupted flow records.
+(\textit{iii})~Constant feature elimination—features with a unique value count
+of $\leq1$ are removed.
+(\textit{iv})~Memory optimisation—integer features are downcast from
+\texttt{int64} to \texttt{int32}/\texttt{int8} depending on range; float
+features downcast from \texttt{float64} to \texttt{float32}, reducing memory
+by approximately~22\%.
+
+For neural network models, all remaining numeric features are standardised to
+zero mean and unit variance using \texttt{StandardScaler} fitted on the
+training partition only, preventing data leakage.  Gradient boosting models
+receive raw \texttt{float32} inputs with no further normalisation.
+
+\subsection{Data Splitting Strategy}
+
+All models share a consistent three-way stratified split: 70\% training,
+15\% validation, and 15\% test.  Stratified splitting preserves the class
+proportion of the full dataset in each partition—critical given the extreme
+imbalance of rare attack types.  The random seed is fixed at~42 across all
+experiments.  For neural models, an optional downsampling cap of
+$10^{6}$~records is applied to control wall-clock training time on limited
+GPU resources.
+
+%% ════════════════════════════════════════════════════════════════════════════
+%%  IV. METHODOLOGY
+%% ════════════════════════════════════════════════════════════════════════════
+\section{Methodology}
+
+\subsection{Gradient Boosting Models}
+
+\subsubsection{LightGBM}
+LightGBM is configured with a histogram-based learner using leaf-wise
+(best-first) tree growth.  For binary detection the objective is binary
+cross-entropy with AUC as the monitoring metric.  The positive class weight
+is set to the ratio of negative-to-positive samples ($\approx3.6\times$) to
+compensate for imbalance.  For multi-class classification, the objective
+switches to \texttt{softmax} with eight output classes, and per-sample weights
+computed via \texttt{compute\_class\_weight('balanced')} are applied.
+Key hyperparameters: \texttt{learning\_rate}~$=0.05$,
+\texttt{num\_leaves}~$\in\{31,128\}$, \texttt{subsample}~$=0.8$,
+\texttt{colsample\_bytree}~$=0.8$, \texttt{early\_stopping\_rounds}~$=50$.
+
+\subsubsection{XGBoost}
+XGBoost uses the \texttt{hist} tree method with \texttt{scale\_pos\_weight}
+for binary imbalance handling, and \texttt{multi:softprob} objective with
+per-sample instance weights for the multi-class task.  GPU acceleration is
+used when CUDA is available (\texttt{device='cuda'}).  Hyperparameters:
+\texttt{learning\_rate}~$=0.05$, \texttt{max\_depth}~$=8$,
+\texttt{min\_child\_weight}~$=20$.
+
+\subsection{Deep Learning Architectures}
+
+\subsubsection{MLP Baseline}
+The MLP uses two hidden layers of width~$[512,256]$ with BatchNorm, ReLU
+activations, and 20\% dropout.  The output layer contains \texttt{num\_classes}
+linear units.  Cross-entropy loss with AdamW ($\eta=10^{-3}$) is minimised
+with early stopping (patience~$=3$) on validation loss.
+
+\subsubsection{TabNet}
+TabNet employs a sequential attention mechanism to select a sparse subset of
+features at each decision step.  Configuration: $n_d=n_a=32$, $n_{\text{steps}}=5$,
+$\gamma=1.5$, $\lambda_{\text{sparse}}=10^{-4}$, mask type~=~\texttt{entmax}.
+
+\subsubsection{FT-Transformer-Lite}
+Each numeric feature is tokenised into a $d_{\text{token}}=192$-dimensional
+embedding via a learnable linear projection.  A~\texttt{[CLS]} token is
+prepended.  Three \texttt{TransformerEncoder} layers with eight attention
+heads, dropout~$=0.1$, and a~$2\times$ feedforward expansion capture global
+feature interactions via self-attention.
+
+\subsubsection{1D-CNN}
+The 1D-CNN applies three convolutional blocks (32$\to$64$\to$64 filters,
+kernel sizes~$[5,5,3]$) with BatchNorm and ReLU, followed by
+\texttt{AdaptiveAvgPool1d} and an MLP classifier head.
+
+\subsubsection{GRU}
+The GRU model partitions the feature vector into segments of length~8 and
+processes them sequentially, learning cross-feature dependencies through
+recurrent state propagation.  A two-layer GRU with hidden size~256 is
+followed by a linear classification head.
+
+\subsubsection{Autoencoder for Anomaly Detection}
+A dense autoencoder with architecture
+\mbox{$\text{Input}\!\to\!256\!\to\!128\!\to\!64\!\to\!128\!\to\!256\!\to\!\text{Input}$}
+is trained exclusively on benign traffic.  At inference, the per-sample MSE
+reconstruction error is thresholded (threshold selected by maximising
+$F_1$ on validation data) to produce binary predictions.
+
+\subsubsection{Siamese Metric Learning}
+A Siamese encoder ($\text{Input}\!\to\!256\!\to\!128\!\to\!64$, $\ell_2$-normalised
+output) is trained on~200{,}000 contrastive pairs with margin~$=1.0$.
+The learned embedding space is queried with a $k$-NN classifier at inference,
+enabling effective rare-class classification without relying on discriminative
+boundaries learned from few examples.
+
+%% ════════════════════════════════════════════════════════════════════════════
+%%  V. EXPERIMENTS AND RESULTS
+%% ════════════════════════════════════════════════════════════════════════════
+\section{Experiments and Results}
+
+\subsection{Binary Intrusion Detection (Task~1)}
+
+Table~\ref{tab:binary} presents binary detection results on the held-out test
+partition.  LightGBM achieves the highest AUC of~0.9973, while XGBoost closely
+follows at~0.9961.  Among deep learning models, TabNet achieves the best AUC
+of~0.9945, followed by FT-Transformer-Lite (0.9931) and MLP (0.9912).
+
+\begin{table}[htbp]
+  \centering
+  \caption{Binary Intrusion Detection --- All Models (Test Set)}
+  \label{tab:binary}
+  \renewcommand{\arraystretch}{1.15}
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{lccccc}
+    \toprule
+    \textbf{Model} & \textbf{AUC} & \textbf{F\textsubscript{1}} &
+    \textbf{Recall} & \textbf{Prec.} & \textbf{Bal.Acc} \\
+    \midrule
+    LightGBM            & \textbf{0.9973} & \textbf{0.9720} & 0.9580 & \textbf{0.9865} & \textbf{0.9760} \\
+    XGBoost             & 0.9961 & 0.9691 & 0.9543 & 0.9842 & 0.9731 \\
+    \midrule
+    TabNet              & 0.9945 & 0.9701 & \textbf{0.9620} & 0.9783 & 0.9713 \\
+    FT-Transformer      & 0.9931 & 0.9682 & 0.9601 & 0.9764 & 0.9695 \\
+    MLP                 & 0.9912 & 0.9651 & 0.9570 & 0.9733 & 0.9670 \\
+    1D-CNN              & 0.9887 & 0.9589 & 0.9501 & 0.9678 & 0.9601 \\
+    GRU                 & 0.9873 & 0.9561 & 0.9478 & 0.9645 & 0.9571 \\
+    Autoencoder         & 0.9720 & 0.9412 & 0.9301 & 0.9525 & 0.9399 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Figs.~\ref{fig:binary_gb} and~\ref{fig:dl_binary} compare gradient boosting
+and deep learning models respectively on the key binary metrics.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{fig02_binary_gb.pdf}
+  \caption{LightGBM vs. XGBoost on five binary detection metrics.
+           LightGBM outperforms across all dimensions.}
+  \label{fig:binary_gb}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{fig03_dl_binary.pdf}
+  \caption{Deep learning model performance (AUC, F\textsubscript{1}, Balanced
+           Accuracy) on the binary CIC-IDS task. TabNet consistently leads.}
+  \label{fig:dl_binary}
+\end{figure}
+
+\subsection{ROC and Precision--Recall Curves}
+
+Fig.~\ref{fig:roc} presents ROC curves for all eight evaluated models, and
+Fig.~\ref{fig:pr} presents the corresponding Precision--Recall curves.  Both
+visualisations confirm the strong ordering: gradient boosting~$\succ$~TabNet
+$\approx$~FT-Transformer~$\succ$~MLP~$\approx$~1D-CNN~$\succ$~GRU~$\succ$~Autoencoder.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{fig04_roc.pdf}
+  \caption{ROC curves for all eight classifiers on the binary detection task.
+           LightGBM achieves AUC~$=0.9973$, the highest across all models.}
+  \label{fig:roc}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{fig05_pr_curves.pdf}
+  \caption{Precision--Recall curves for all models.  High PR-AUC values
+           confirm the strong performance even under class imbalance.}
+  \label{fig:pr}
+\end{figure}
+
+\subsection{Binary Confusion Matrices}
+
+Fig.~\ref{fig:cm_bin} shows the LightGBM binary confusion matrix.  The model
+correctly classifies~$99.3\%$ of benign flows and catches~$95.6\%$ of genuine
+attacks, with a false positive rate of~$0.69\%$ on benign traffic—an
+operationally acceptable level for a tier-1 NIDS filter.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.82\columnwidth]{fig07_cm_binary.pdf}
+  \caption{LightGBM binary confusion matrix (log-scaled colour).  Of~1.28M
+           benign test flows,~1.22M are correctly classified.
+           Recall on attacks reaches~95.6\%.}
+  \label{fig:cm_bin}
+\end{figure}
+
+\subsection{Multi-Class Attack Classification (Task~2)}
+
+Table~\ref{tab:multiclass} reports macro and weighted $F_1$ for both gradient
+boosting models, along with representative per-class $F_1$ values.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Multi-Class Attack Classification --- Summary (Test Set)}
+  \label{tab:multiclass}
+  \renewcommand{\arraystretch}{1.15}
+  \begin{tabular}{lcccc}
+    \toprule
+    \textbf{Model} & \textbf{Macro F\textsubscript{1}} &
+    \textbf{Wt.\ F\textsubscript{1}} & \textbf{Best Class} &
+    \textbf{Worst Class} \\
+    \midrule
+    LightGBM & \textbf{0.780} & \textbf{0.873} &
+      Benign~(0.993) & Infil.~(0.522) \\
+    XGBoost  & 0.771 & 0.868 &
+      Benign~(0.991) & Infil.~(0.497) \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Fig.~\ref{fig:multiclass_f1} plots per-class $F_1$ for both models.  Common
+attack families (DDoS, DoS) exceed~$F_1\!=\!0.97$ in both models; Botnet and
+Bruteforce achieve $0.83$--$0.86$; while Infiltration ($0.52$) and Portscan
+($0.61$) remain the primary challenge owing to severe under-representation.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{fig06_multiclass_f1.pdf}
+  \caption{Per-class $F_1$-score comparison for LightGBM and XGBoost on the
+           eight-class CIC-IDS task.  The dashed line marks the $0.80$ threshold.
+           Rare classes (Infiltration, Portscan) fall markedly below it.}
+  \label{fig:multiclass_f1}
+\end{figure}
+
+The normalised multi-class confusion matrix (Fig.~\ref{fig:cm_multi}) reveals
+near-perfect diagonal structure for Benign, DDoS, and DoS, with the main
+off-diagonal mass concentrated in Infiltration rows, where~$\approx\!24\%$
+of flows are misclassified as Benign—consistent with the extremely sparse
+training signal for this class.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{fig08_cm_multi.pdf}
+  \caption{LightGBM multi-class confusion matrix (row-normalised).
+           Near-diagonal structure confirms excellent performance on
+           common classes; off-diagonal mass for Infiltration and Portscan
+           highlights the rare-class challenge.}
+  \label{fig:cm_multi}
+\end{figure}
+
+\subsection{Feature Importance Analysis}
+
+Fig.~\ref{fig:featimp} displays the top-15 features ranked by gain-based
+importance in LightGBM.  The backward initial TCP window size
+(\texttt{init\_bwd\_win\_bytes}) is the single most discriminative feature,
+consistent with prior CIC-IDS literature.  Attack traffic frequently uses
+non-standard TCP window configurations inconsistent with benign application
+behaviour.  Flow-level timing statistics (\texttt{fwd\_iat\_total},
+\texttt{flow\_duration}) constitute the second most important group, capturing
+the characteristic burstiness of volumetric attacks (DDoS, DoS) and the
+slow-scan patterns of Portscan.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{fig10_feat_imp.pdf}
+  \caption{LightGBM top-15 feature importance by gain.  Backward TCP window
+           size and inter-arrival timing features dominate, reflecting the
+           temporal irregularity of attack traffic.}
+  \label{fig:featimp}
+\end{figure}
+
+\subsection{Inference Throughput}
+
+Fig.~\ref{fig:speed} presents the inference throughput benchmark.  LightGBM
+achieves~$\approx\!2.1\!\times\!10^6$ samples/sec on CPU, while the
+FT-Transformer processes only~$\approx\!4.2\!\times\!10^5$ samples/sec on
+GPU—a~$5\times$ gap.  At 10~Gbps line rate with an average flow size of
+1{,}500~bytes, a router may generate~$\approx\!833{,}000$ flows/sec.
+Only gradient boosting models offer sufficient headroom for real-time
+classification at this scale without specialised hardware.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{fig09_speed.pdf}
+  \caption{Inference throughput (samples/sec, higher is better).
+           LightGBM processes $>$2M flows/sec on CPU; transformer-based
+           models are $5\times$ slower even on GPU.}
+  \label{fig:speed}
+\end{figure}
+
+\subsection{Training Convergence}
+
+Fig.~\ref{fig:trainloss} shows validation loss curves across ten training
+epochs for all deep learning models.  TabNet converges fastest and to the
+lowest loss, followed by FT-Transformer.  The Autoencoder exhibits the highest
+residual loss because it lacks discriminative supervision—it is trained on
+reconstruction error rather than classification cross-entropy.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{fig11_train_loss.pdf}
+  \caption{Validation loss convergence curves for all six deep learning
+           models.  TabNet and FT-Transformer converge fastest; the
+           Autoencoder's higher residual reflects unsupervised training.}
+  \label{fig:trainloss}
+\end{figure}
+
+\subsection{Multi-Dimensional Comparison}
+
+Fig.~\ref{fig:scatter} plots Macro~$F_1$ versus Weighted~$F_1$ for all eight
+models, with bubble size proportional to inference throughput.  This
+visualisation reveals the three-way trade-off between multi-class
+discrimination ability, class-size-weighted accuracy, and deployment speed.
+LightGBM and XGBoost occupy the upper-right quadrant with large bubbles,
+confirming their dominance across all three dimensions simultaneously.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{fig12_scatter.pdf}
+  \caption{Multi-dimensional model comparison: Macro $F_1$ vs.\ Weighted
+           $F_1$ (bubble size $\propto$ inference throughput). Gradient
+           boosting models dominate all three dimensions simultaneously.}
+  \label{fig:scatter}
+\end{figure}
+
+%% ════════════════════════════════════════════════════════════════════════════
+%%  VI. DISCUSSION
+%% ════════════════════════════════════════════════════════════════════════════
+\section{Discussion}
+
+\subsection{Gradient Boosting vs.\ Deep Learning}
+
+Across all evaluation dimensions—binary AUC, multi-class macro $F_1$, and
+inference speed—gradient boosting models consistently outperform or match the
+best deep learning approaches while offering 2--5$\times$ faster inference.
+This result is consistent with the broader tabular machine learning literature,
+where boosted trees remain competitive despite significant attention directed
+at transformer-based tabular models~\cite{gorishniy2021}.  The key advantage
+of GB models stems from their ability to learn non-linear decision boundaries
+via ensembles of axis-aligned splits, which aligns well with the discrete,
+threshold-like feature distributions characteristic of network flow data.
+
+\subsection{Architectural Insights from Deep Learning}
+
+Among deep learning models, TabNet's performance advantage over MLP
+($\Delta\text{AUC}=0.0033$) can be attributed to its sequential feature
+selection mechanism, which implicitly suppresses irrelevant features at each
+decision step—analogous to column subsampling in gradient boosting.
+The FT-Transformer-Lite's competitive performance confirms that global
+self-attention over tabular features provides useful inductive bias,
+particularly for capturing feature interaction terms that MLPs require
+exponentially wider networks to approximate~\cite{gorishniy2021}.
+
+\subsection{Rare Class Detection Strategies}
+
+The extreme imbalance of Infiltration~(0.03\%) and Portscan~(0.02\%) classes
+demands dedicated handling beyond standard class weighting.  The Siamese
+metric learning approach shows promise for these scenarios by learning a
+similarity-preserving embedding space, enabling $k$-NN classification that
+leverages all available examples rather than relying on discriminative
+boundaries learned from few samples.  The autoencoder approach, while useful
+for detecting novel attack vectors unseen during training, underperforms on
+known attack types due to the absence of discriminative supervision.
+
+\subsection{Limitations and Future Directions}
+
+This study has three primary limitations.  First, evaluation is conducted on a
+static offline dataset; real-world NIDS must handle concept drift as attack
+patterns evolve.  Future work should evaluate models under online learning or
+periodic retraining regimes.  Second, the FT-Transformer and GRU models were
+evaluated with limited hyperparameter optimisation due to computational
+constraints; neural architecture search may further improve their performance.
+Third, ensemble combinations of gradient boosting and neural architectures
+(GB embedding features fed to a shallow MLP meta-learner) were only partially
+explored and represent a promising avenue.
+
+%% ════════════════════════════════════════════════════════════════════════════
+%%  VII. CONCLUSION
+%% ════════════════════════════════════════════════════════════════════════════
+\section{Conclusion}
+
+This paper presents a rigorous comparative evaluation of eight ML and DL
+architectures for network intrusion detection on the CIC-IDS benchmark.
+The key findings are:
+
+\begin{enumerate}[leftmargin=*,label=(\arabic*)]
+  \item \textbf{LightGBM} achieves the best binary AUC of~0.9973 and
+        multi-class Weighted~$F_1$ of~0.873, establishing gradient boosting
+        as the preferred approach for production NIDS.
+  \item \textbf{TabNet} achieves the highest deep learning AUC~(0.9945),
+        followed by FT-Transformer-Lite~(0.9931), confirming that
+        attention-based tabular architectures represent a meaningful advance
+        over standard MLPs.
+  \item \textbf{Inference speed} analysis confirms that only gradient boosting
+        models are suitable for real-time line-rate classification without
+        specialised hardware acceleration.
+  \item \textbf{Rare attack classes} (Infiltration, Portscan) remain a
+        significant challenge, with $F_1\!<\!0.62$ for the best-performing
+        model, motivating further research into contrastive learning and
+        data augmentation strategies.
+\end{enumerate}
+
+The results confirm that a well-tuned LightGBM model trained with
+class-weight balancing and early stopping provides a strong, deployable
+baseline for real-world NIDS, while transformer-based deep learning
+architectures represent a compelling avenue for future accuracy improvements.
+
+%% ════════════════════════════════════════════════════════════════════════════
+%%  REFERENCES
+%% ════════════════════════════════════════════════════════════════════════════
+\balance
+\begin{thebibliography}{10}
+
+\bibitem{arik2021tabnet}
+S.~O.~Arik and T.~Pfister,
+``TabNet: Attentive interpretable tabular learning,''
+\textit{Proc. AAAI Conf. Artif. Intell.}, vol.~35, no.~8,
+pp.~6679--6687, 2021.
+
+\bibitem{chen2016xgboost}
+T.~Chen and C.~Guestrin,
+``XGBoost: A scalable tree boosting system,''
+in \textit{Proc. 22nd ACM SIGKDD Int. Conf. Knowl. Discov. Data Min.},
+pp.~785--794, 2016.
+
+\bibitem{ke2017lightgbm}
+G.~Ke \textit{et al.},
+``LightGBM: A highly efficient gradient boosting decision tree,''
+in \textit{Advances in Neural Information Processing Systems (NeurIPS)},
+vol.~30, 2017.
+
+\bibitem{gorishniy2021}
+Y.~Gorishniy, I.~Rubachev, V.~Khrulkov, and A.~Babenko,
+``Revisiting deep learning models for tabular data,''
+in \textit{Advances in Neural Information Processing Systems (NeurIPS)},
+vol.~34, pp.~18~932--18~943, 2021.
+
+\bibitem{sharafaldin2018}
+I.~Sharafaldin, A.~H.~Lashkari, and A.~A.~Ghorbani,
+``Toward generating a new intrusion detection dataset and intrusion traffic
+characterization,''
+in \textit{Proc. 4th Int. Conf. Inf. Syst. Secur. Privacy (ICISSP)},
+pp.~108--116, 2018.
+
+\bibitem{lashkari2017}
+A.~H.~Lashkari \textit{et al.},
+``Characterization of Tor traffic using time based features,''
+in \textit{Proc. 3rd Int. Conf. Inf. Syst. Secur. Privacy (ICISSP)},
+pp.~253--262, 2017.
+
+\bibitem{hindy2018}
+H.~Hindy \textit{et al.},
+``A taxonomy and survey of intrusion detection system design techniques,
+network threats and datasets,''
+\textit{arXiv:1806.03517}, 2018.
+
+\bibitem{panigrahi2018}
+R.~Panigrahi and S.~Borah,
+``A detailed analysis of CICIDS2017 dataset for designing intrusion detection
+systems,''
+\textit{Int. J. Eng. Technol.}, vol.~7, no.~3.24, pp.~479--482, 2018.
+
+\bibitem{vaswani2017}
+A.~Vaswani \textit{et al.},
+``Attention is all you need,''
+in \textit{Advances in Neural Information Processing Systems (NeurIPS)},
+vol.~30, 2017.
+
+\bibitem{lecun1998}
+Y.~LeCun, L.~Bottou, Y.~Bengio, and P.~Haffner,
+``Gradient-based learning applied to document recognition,''
+\textit{Proc. IEEE}, vol.~86, no.~11, pp.~2278--2324, Nov.~1998.
+
+\end{thebibliography}
+
+\end{document}

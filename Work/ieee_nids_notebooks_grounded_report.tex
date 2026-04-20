@@ -1,0 +1,683 @@
+\documentclass[10pt,journal]{IEEEtran}
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{siunitx}
+\usepackage{url}
+\usepackage[hidelinks]{hyperref}
+
+\title{Integrated Intrusion Detection Study from Two Executed Notebooks: \newline Large-Scale Gradient Boosting Baselines and Deep Learning Strategy Analysis}
+
+\author{Author~Name
+\thanks{This manuscript is a reproducibility-first report built from stored notebook outputs. Replace author and affiliation information before submission.}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This paper presents a unified, evidence-constrained research report that combines two executed notebook workflows over CIC flow-level traffic: a gradient-boosting baseline notebook and a deep-learning strategy notebook. The study addresses binary intrusion detection and multi-class attack-family attribution under severe class imbalance and production-scale sample counts. On the gradient-boosting workflow (\num{9167581} rows, 59 features), binary metrics are near-saturated (LightGBM AUC \num{0.99656}, XGBoost AUC \num{0.99675}) and multi-class quality is strong in weighted terms (LightGBM Weighted F1 \num{0.87339}, XGBoost \num{0.87223}) but weaker in macro terms due to minority-class precision collapse. On the deep-learning workflow (binary mode, \num{1000000} sampled rows, \num{150000} test rows), FT-Transformer-Lite leads core neural models (AUC \num{0.98624}, F1 \num{0.94128}), while 1D-CNN and GRU provide competitive but lower scores. Additional advanced strategies (Autoencoder, Siamese, TabNet interpretability) were partially completed because later cells encountered runtime instability; completed outputs are reported explicitly and incompleteness is declared where present. Detailed method-level interpretation explains why tree boosting remained strongest in this data regime, why FT-Transformer-Lite outperformed MLP and TabNet among deep baselines, and why anomaly-only reconstruction underperformed for this binary objective. The report concludes with a deployment-focused architecture and a prioritized roadmap for completing advanced experiments under stable runtime conditions.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Network Intrusion Detection, Tabular Machine Learning, LightGBM, XGBoost, Deep Learning for Tabular Data, FT-Transformer, TabNet, Class Imbalance, Ensemble Learning.
+\end{IEEEkeywords}
+
+\section{Introduction}
+Intrusion detection in operational networks requires two capabilities at once: high-sensitivity detection of malicious traffic and useful attribution of attack family for analyst triage. In practice, these goals are technically coupled but not identical. Binary detection is dominated by missed-attack risk (false negatives), while multi-class attribution is dominated by minority-class reliability (precision and calibration of rare labels). A system can be excellent at one and unstable at the other.
+
+This report merges two complementary notebook workflows run on CIC flow data. The first notebook emphasizes large-scale gradient boosting for both binary and multi-class tasks. The second notebook extends the pipeline with deep tabular models and additional strategy families (representation learning, sequence modeling, attention-based explainability, and hybrid ensembles). The user requirement for this manuscript is strict: no hallucinated claims, clear method-level interpretation, and conclusions anchored only in observed notebook outputs.
+
+The central question is therefore not only ``which model has the highest score,'' but ``why each method behaved as observed under this specific data geometry, class skew, feature format, and runtime setup.''
+
+\section{Research Questions and Contributions}
+This manuscript addresses four research questions.
+
+\begin{itemize}
+\item \textbf{RQ1}: How strong are large-scale gradient-boosting baselines for binary and multi-class IDS in this CIC configuration?
+\item \textbf{RQ2}: Among core deep tabular models (MLP, TabNet, FT-Transformer-Lite), which architecture is most competitive and why?
+\item \textbf{RQ3}: Which advanced strategy families show practical signal in completed runs, and which remain inconclusive due to runtime failure?
+\item \textbf{RQ4}: What deployment architecture is most defensible from the combined evidence?
+\end{itemize}
+
+The contributions are:
+
+\begin{itemize}
+\item A single integrated report spanning both notebooks with a strict evidence policy.
+\item A detailed method rationale section that explains expected behavior of each strategy class A--E before looking at outcomes.
+\item A completed-vs-partial accounting for advanced deep-learning cells, so unsupported claims are not promoted to conclusions.
+\item A deployment-oriented conclusion that distinguishes robust findings from open experiments.
+\end{itemize}
+
+\section{Evidence Policy and Reproducibility Scope}
+Two notebook artifacts are integrated:
+
+\begin{itemize}
+\item Notebook A (gradient boosting baseline): \url{cic-ids-multi-class-attack-classification-using-gb.ipynb}
+\item Notebook B (deep learning extension): \url{cic-ids-dl-tabnet-mlp-fttransformer-colab.ipynb}
+\end{itemize}
+
+Every metric table in this paper is populated from stored output lines in those notebook files. If a strategy cell did not complete or ended in kernel failure, its status is marked \emph{partial} or \emph{not available}. This policy intentionally favors epistemic honesty over completeness.
+
+\section{Dataset, Labels, and Experimental Protocol}
+\subsection{Data Source and Scale}
+Both notebooks load the harmonized CIC collection from Kaggle and CIC sources \cite{kaggleciccollection,cicdatasets,sharafaldin2018toward}. The loaded frame has:
+
+\begin{itemize}
+\item \textbf{Rows}: \num{9167581}
+\item \textbf{Columns}: 59
+\end{itemize}
+
+The class map used in multi-class mode includes Benign, Botnet, Bruteforce, DDoS, DoS, Infiltration, Portscan, and Webattack.
+
+\subsection{Notebook A Protocol (Gradient Boosting)}
+Notebook A uses full-data stratified split:
+
+\begin{itemize}
+\item Train: \num{6417306}
+\item Validation: \num{1375137}
+\item Test: \num{1375138}
+\end{itemize}
+
+Both binary and multi-class tasks are trained with class-imbalance-aware weighting.
+
+\subsection{Notebook B Protocol (Deep Learning)}
+Notebook B is configured in binary mode with \texttt{MAX\_ROWS=1000000}, yielding approximately:
+
+\begin{itemize}
+\item Train: \num{700000}
+\item Validation: \num{150000}
+\item Test: \num{150000}
+\end{itemize}
+
+It evaluates core deep models first, then attempts advanced strategies A--E.
+
+\subsection{Evaluation Metrics}
+Binary evaluation uses Accuracy, Precision, Recall, F1, and AUC.
+\begin{equation}
+\text{Precision}=\frac{TP}{TP+FP},\quad
+\text{Recall}=\frac{TP}{TP+FN},
+\end{equation}
+\begin{equation}
+F_1 = 2\cdot\frac{\text{Precision}\cdot\text{Recall}}{\text{Precision}+\text{Recall}}.
+\end{equation}
+
+Multi-class evaluation emphasizes both macro and weighted scoring:
+\begin{equation}
+F_1^{\text{macro}} = \frac{1}{K}\sum_{c=1}^{K} F_{1,c},
+\end{equation}
+\begin{equation}
+F_1^{\text{weighted}} = \sum_{c=1}^{K} \frac{n_c}{N}F_{1,c}.
+\end{equation}
+
+Macro metrics are critical under class imbalance because weighted metrics can appear high while minority classes fail operationally.
+
+\section{Methodology and Why These Methods Were Chosen}
+\subsection{Gradient Boosting Baseline Family}
+XGBoost and LightGBM remain state-of-practice baselines for high-dimensional tabular data \cite{chen2016xgboost,ke2017lightgbm}. They were selected for three reasons:
+
+\begin{enumerate}
+\item They naturally handle heterogeneous, non-linear feature interactions without heavy normalization assumptions.
+\item They are robust at large sample counts and remain competitive when class weighting is required.
+\item They provide strong and stable baselines for judging whether deep tabular models add value.
+\end{enumerate}
+
+\subsection{Core Deep Models}
+Notebook B evaluates three core models:
+
+\begin{itemize}
+\item \textbf{MLP}: a direct dense baseline with batch normalization and dropout.
+\item \textbf{TabNet}: sequential feature-attention architecture for tabular interpretability \cite{arik2021tabnet}.
+\item \textbf{FT-Transformer-Lite}: tokenized feature encoder inspired by transformer-style tabular modeling \cite{gorishniy2021revisiting}.
+\end{itemize}
+
+These were chosen to cover distinct inductive biases:
+
+\begin{itemize}
+\item MLP tests simple global non-linearity.
+\item TabNet tests sparse, stepwise feature selection.
+\item FT-Transformer tests all-to-all feature interaction modeling.
+\end{itemize}
+
+\subsection{Advanced Strategy Families A--E}
+The advanced section extends beyond direct supervised classification.
+
+\subsubsection{A: Autoencoder Anomaly Learning}
+A benign-only reconstruction model is used as one-class detector \cite{hinton2006reducing}. The expectation is strong novelty sensitivity but potential overlap failure when benign and attack manifolds partially coincide in feature space.
+
+\subsubsection{B: Siamese Metric Learning}
+Pairwise contrastive learning targets representation geometry suitable for sparse classes \cite{koch2015siamese}. In principle, this can improve few-shot separability, but stability is sensitive to pair construction, margin, and runtime budget.
+
+\subsubsection{C: 1D-CNN}
+A 1D convolutional stack treats tabular features as an ordered signal. This is a pragmatic compromise: cheaper than recurrent models while still modeling local co-activation motifs.
+
+\subsubsection{D: GRU Sequence Model}
+A recurrent architecture (GRU/LSTM family) is designed for sequential dependencies \cite{cho2014gru,hochreiter1997lstm}. In this notebook, sequences are constructed from ordered rows using temporal-like feature sorting; this is useful but weaker than true session-level event sequences.
+
+\subsubsection{E: TabNet Explainability}
+Beyond pure prediction, TabNet mask analysis provides global and local saliency signatures for incident forensics.
+
+\section{Results from Notebook A: Large-Scale Gradient Boosting}
+\subsection{Binary Detection Results}
+Table~\ref{tab:gb_binary} reports test-set binary performance from Notebook A output lines.
+
+\begin{table}[!t]
+\caption{Notebook A Binary Test Metrics}
+\label{tab:gb_binary}
+\centering
+\begin{tabular}{lcc}
+\toprule
+Metric & LightGBM & XGBoost \\
+\midrule
+AUC & 0.99656 & 0.99675 \\
+F1-score & 0.97228 & 0.97121 \\
+Recall & 0.95832 & 0.95865 \\
+Precision & 0.98665 & 0.98410 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Interpretation: both learners are highly reliable binary detectors in this setting. XGBoost gives the highest AUC, while LightGBM has slightly higher F1 and precision at the tested threshold.
+
+\subsection{Multi-Class Results and Class-Imbalance Effects}
+Aggregate multi-class metrics are shown in Table~\ref{tab:gb_multi}.
+
+\begin{table}[!t]
+\caption{Notebook A Multi-Class Summary}
+\label{tab:gb_multi}
+\centering
+\begin{tabular}{lcc}
+\toprule
+Metric & LightGBM & XGBoost \\
+\midrule
+Macro F1 & 0.77997 & 0.74524 \\
+Weighted F1 & 0.87339 & 0.87223 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The near-tie in weighted F1 but wider gap in macro F1 indicates minority classes are the primary differentiator between learners.
+
+\subsection{Per-Class Behavior}
+Table~\ref{tab:gb_perclass} reproduces the class-level report lines available in notebook output.
+
+\begin{table*}[!t]
+\caption{Notebook A Per-Class Report (Test Split)}
+\label{tab:gb_perclass}
+\centering
+\begin{tabular}{l c c c c r}
+\toprule
+\multirow{2}{*}{Class} & \multicolumn{2}{c}{LightGBM} & \multicolumn{2}{c}{XGBoost} & \multirow{2}{*}{Support} \\
+ & Recall & F1 & Recall & F1 & \\
+\midrule
+Benign & 0.74 & 0.85 & 0.74 & 0.85 & 1,077,929 \\
+Botnet & 1.00 & 0.99 & 1.00 & 0.99 & 21,882 \\
+Bruteforce & 1.00 & 1.00 & 1.00 & 1.00 & 15,347 \\
+DDoS & 1.00 & 1.00 & 1.00 & 1.00 & 185,758 \\
+DoS & 1.00 & 1.00 & 1.00 & 0.99 & 59,269 \\
+Infiltration & 0.95 & 0.09 & 0.95 & 0.09 & 14,152 \\
+Portscan & 0.95 & 0.80 & 0.98 & 0.69 & 353 \\
+Webattack & 0.98 & 0.51 & 0.98 & 0.35 & 448 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+This table explains the macro-vs-weighted discrepancy. Rare classes retain high recall but unstable precision, especially Webattack and Infiltration.
+
+\section{Results from Notebook B: Core Deep Models and Diagnostics}
+\subsection{Core Neural Comparison}
+Core binary metrics are shown in Table~\ref{tab:dl_core}.
+
+\begin{table}[!t]
+\caption{Notebook B Core Deep Model Metrics (Binary)}
+\label{tab:dl_core}
+\centering
+\begin{tabular}{lccccc}
+\toprule
+Model & Acc. & F1 & Recall & Prec. & AUC \\
+\midrule
+MLP & 0.96987 & 0.92950 & 0.91909 & 0.94014 & 0.98317 \\
+TabNet & 0.91861 & 0.78690 & 0.69527 & 0.90635 & 0.96330 \\
+FT-Transformer-Lite & 0.97493 & 0.94128 & 0.92992 & 0.95293 & 0.98624 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+FT-Transformer-Lite is best by both AUC and F1 among the three core deep baselines.
+
+\subsection{Extended Diagnostic Metrics}
+\begin{table*}[!t]
+\caption{Notebook B Extended Binary Diagnostics}
+\label{tab:dl_extended}
+\centering
+\begin{tabular}{lcccccc}
+\toprule
+Model & Balanced Acc. & PR-AUC & MCC & Specificity & FPR & FNR \\
+\midrule
+FT-Transformer-Lite & 0.9586 & 0.9758 & 0.9255 & 0.9873 & 0.0127 & 0.0701 \\
+MLP & 0.9515 & 0.9696 & 0.9104 & 0.9839 & 0.0161 & 0.0809 \\
+TabNet & 0.8377 & 0.9136 & 0.7476 & 0.9802 & 0.0198 & 0.3047 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+These metrics reinforce the same ranking and reveal the main TabNet weakness in this run: very high false-negative rate relative to MLP and FT.
+
+\subsection{Inference Throughput}
+\begin{table}[!t]
+\caption{Notebook B Inference Throughput (\num{150000} Test Samples)}
+\label{tab:dl_speed}
+\centering
+\begin{tabular}{lcc}
+\toprule
+Model & Inference Time (s) & Samples/s \\
+\midrule
+TabNet & 1.5483 & 96,878.4 \\
+MLP & 1.5790 & 94,999.1 \\
+FT-Transformer-Lite & 7.8703 & 19,059.0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+FT-Transformer-Lite offers best quality but lowest throughput, making it a quality-priority model rather than a latency-priority model in this configuration.
+
+\section{Advanced Strategy Outcomes (A--E) with Run-Status Transparency}
+\subsection{Completed and Partial Outcomes}
+Advanced strategy status is summarized in Table~\ref{tab:advanced_status}. Only printed values are used.
+
+\begin{table*}[!t]
+\caption{Advanced Strategy Status and Verified Metrics from Notebook B}
+\label{tab:advanced_status}
+\centering
+\begin{tabular}{p{3.0cm}p{2.1cm}p{9.8cm}}
+\toprule
+Strategy & Status & Verified output evidence \\
+\midrule
+A: Autoencoder & Completed & Accuracy 0.79685, F1 0.16974, Recall 0.09609, Precision 0.72712, AUC 0.73745 \\
+B: Siamese metric learning & Inconclusive & No stable final metrics line stored \\
+C: 1D-CNN & Completed & Accuracy 0.95942, F1 0.90005, Recall 0.84540, Precision 0.96226, AUC 0.97863 \\
+D: GRU sequence & Completed & Accuracy 0.93236, F1 0.83033, Recall 0.76591, Precision 0.90659, AUC 0.94893 \\
+E: TabNet interpretability & Completed & Global and local importance outputs produced \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\subsection{Why Some Advanced Cells Failed}
+Two failure signatures were explicitly observed in notebook outputs:
+\begin{itemize}
+\item Kernel instability/crash during later advanced cells.
+\item Resource pressure in optional TabPFN runs (including out-of-memory and setup constraints).
+\end{itemize}
+
+These are systems-level constraints, not direct evidence that the corresponding algorithms are intrinsically ineffective.
+
+\section{Why the Observed Results Occurred}
+This section addresses the central ``why'' question by connecting method inductive bias to measured outcomes.
+
+\subsection{Why Gradient Boosting Stayed Strongest Overall}
+The data are fixed-length tabular flow summaries with mixed marginal distributions, strong non-linearity, and heavy class skew. Tree boosting is well-matched to this regime because it:
+
+\begin{itemize}
+\item learns non-monotonic decision surfaces without requiring explicit feature scaling assumptions,
+\item handles sparse minority regions via weighted splits,
+\item scales efficiently to millions of rows with robust optimization behavior.
+\end{itemize}
+
+The notebook evidence reflects this match: binary AUC near 0.997 and high weighted multi-class quality.
+
+\subsection{Why FT-Transformer-Lite Beat MLP and TabNet in Core DL}
+The FT-style model has a stronger mechanism for feature interaction modeling than a plain MLP because attention layers can condition each feature representation on all others. In IDS tabular flows, attacks are often defined by joint states (e.g., timing + packet variability + directional asymmetry), not single-feature magnitude alone. This aligns with FT's higher AUC and F1.
+
+TabNet underperformed in this run despite good tabular reputation. Possible evidence-consistent causes are:
+\begin{itemize}
+\item sensitivity to hyperparameter choices and learning schedule,
+\item higher optimization variance in this specific binary setup,
+\item stronger impact of class imbalance under current threshold and training dynamics.
+\end{itemize}
+
+The measured FNR for TabNet (0.3047) supports the view that the dominant issue here is missed-attack rate, not merely calibration.
+
+\subsection{Why Autoencoder Performed Poorly on Recall}
+The autoencoder strategy learns a manifold of benign traffic and flags high reconstruction error as attack. This design can fail when part of the attack distribution lies close to benign submanifolds in reconstructed feature space. The measured pattern (Recall 0.09609, Precision 0.72712) matches exactly that failure mode: conservative positive flags with many missed attacks.
+
+In other words, this one-class detector is usable as an auxiliary risk score, but not as a standalone high-recall detector for this binary objective.
+
+\subsection{Why 1D-CNN Outperformed GRU in This Setting}
+1D-CNN reached higher AUC/F1 than GRU in completed runs. This is consistent with how sequences were formed:
+\begin{itemize}
+\item 1D-CNN consumed each sample's feature vector directly and learned local feature combinations.
+\item GRU relied on pseudo-sequence construction from sorted rows, which does not necessarily encode true session-level event chronology.
+\end{itemize}
+
+Therefore, GRU had to solve a harder representation problem with less trustworthy temporal signal.
+
+\subsection{Quality-vs-Speed Trade-off}
+A clear Pareto pattern appears:
+\begin{itemize}
+\item Best quality among core DL: FT-Transformer-Lite.
+\item Best throughput among core DL: TabNet and MLP.
+\end{itemize}
+
+This implies deployment should be policy-driven. If latency budget is strict, MLP/TabNet-like models are attractive. If marginal quality gain is mission-critical and throughput budget allows, FT is preferred.
+
+\section{Integrated Comparative Summary}
+Table~\ref{tab:integrated_summary} condenses the strongest completed results across both notebooks.
+
+\begin{table*}[!t]
+\caption{Integrated Summary of Strongest Completed Results}
+\label{tab:integrated_summary}
+\centering
+\begin{tabular}{l l c c c c c}
+\toprule
+Workflow & Model & Accuracy & F1 & Recall & Precision & AUC \\
+\midrule
+Notebook A (binary) & LightGBM & -- & 0.97228 & 0.95832 & 0.98665 & 0.99656 \\
+Notebook A (binary) & XGBoost & -- & 0.97121 & 0.95865 & 0.98410 & 0.99675 \\
+Notebook B (core DL) & FT-Transformer-Lite & 0.97493 & 0.94128 & 0.92992 & 0.95293 & 0.98624 \\
+Notebook B (advanced complete) & 1D-CNN & 0.95942 & 0.90005 & 0.84540 & 0.96226 & 0.97863 \\
+Notebook B (advanced complete) & GRU-Sequence & 0.93236 & 0.83033 & 0.76591 & 0.90659 & 0.94893 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+Two conclusions follow from this table.
+
+\begin{enumerate}
+\item Under current evidence, boosted-tree models are still the top-performing and most stable choice.
+\item Deep models are useful and competitive but should be selected by targeted objective (interaction modeling, interpretability, or deployment constraints) rather than assumed universal superiority.
+\end{enumerate}
+
+\section{Detailed Method Explanations and Mechanistic Interpretation}
+This section expands the technical rationale behind each model family and links architecture behavior to observed outputs. The goal is to move from metric listing to mechanism-level explanation.
+
+\subsection{Gradient Boosting as Additive Non-Linear Partitioning}
+Gradient boosting models can be written as additive function approximation over trees:
+\begin{equation}
+\hat{y}(\mathbf{x}) = \sum_{m=1}^{M}\eta f_m(\mathbf{x}),
+\end{equation}
+where each tree $f_m$ corrects residual error from previous trees and $\eta$ is a shrinkage factor. For tabular intrusion features, this matters because traffic states are often defined by thresholded interactions (for example, packets-per-flow crossed with inter-arrival statistics). Tree learners express such interaction rules directly through split compositions.
+
+For class-imbalanced data, weighting modifies the training objective so minority errors are amplified during split gain optimization. This helps preserve minority recall but can reduce precision when minority manifolds overlap with majority regions. The per-class behavior in Table~\ref{tab:gb_perclass} follows this pattern: high recall remains possible for small classes, while precision is unstable for rare labels.
+
+\subsection{Why LightGBM and XGBoost Are Close but Not Identical}
+Although both are gradient-boosted tree systems, their optimization and tree-growth behavior differ. LightGBM uses histogram-based splitting and leaf-wise growth, often favoring aggressive local partitioning. XGBoost uses a different regularization and growth policy. On this dataset, both achieve near-identical weighted outcomes, but LightGBM's better macro F1 suggests slightly more favorable minority trade-offs in this run. This is consistent with the principle that boosting-family differences are often visible first in minority-class precision/recall balance rather than in majority-weighted metrics.
+
+\subsection{MLP Baseline: Dense Approximation Without Explicit Interaction Routing}
+An MLP can approximate complex decision boundaries, but it has no explicit attention or sparse routing over features. All feature interactions are learned implicitly through dense layers. In large tabular IDS data, this often yields strong baseline quality but may plateau when discriminative signal depends on high-order conditional interactions. Notebook B results match this expectation: MLP is strong and efficient, but slightly behind FT-Transformer-Lite in AUC and F1.
+
+\subsection{TabNet: Sequential Sparse Attention and Its Sensitivities}
+TabNet applies feature selection in multiple decision steps, producing masks that support interpretability \cite{arik2021tabnet}. The advantage is transparent feature usage per decision stage; the downside is stronger sensitivity to optimization schedule, sparsity coefficients, and early stopping behavior. In this run, TabNet preserved high specificity but had a notably higher FNR than other core deep models, indicating attack misses. Mechanistically, this can happen when sequential masks over-focus on stable dominant features while underutilizing weak but crucial minority-discriminative signals.
+
+\subsection{FT-Transformer-Lite: Global Feature-Context Modeling}
+FT-Transformer-style architectures encode each feature as a token-like representation and model interactions through attention layers \cite{gorishniy2021revisiting}. In intrusion data, many malicious signatures emerge from combinations rather than standalone values. Attention-based interaction modeling can represent these combinations more directly than purely dense alternatives, especially under non-linear, heterogeneous marginals. This is a plausible mechanism for FT's leading core-DL metrics in Notebook B.
+
+The same mechanism also explains throughput cost: attention-based interaction modeling is computationally heavier than compact dense forward passes, so latency is expected to increase even when quality improves.
+
+\subsection{Autoencoder One-Class Detection: Strength and Structural Limitation}
+Autoencoders trained primarily on benign traffic use reconstruction error
+\begin{equation}
+r(\mathbf{x}) = \lVert \mathbf{x} - \hat{\mathbf{x}}\rVert_2,
+\end{equation}
+with anomaly decision $r(\mathbf{x}) > \tau$. This paradigm is valuable when attack examples are scarce or non-stationary, but it assumes attack flows are reconstruction-distant from benign manifolds. If attack and benign regions overlap in reconstruction space, recall can collapse while precision remains moderate for detected positives. The observed metrics (very low recall, relatively high precision) are consistent with this structural limitation.
+
+\subsection{Siamese Metric Learning: Why It Is Promising but Fragile in Practice}
+Siamese training optimizes pairwise distances so same-class samples are close and different-class samples are separated \cite{koch2015siamese}. In IDS, this could improve representation for rare classes and retrieval-style triage. However, outcome quality depends strongly on pair mining strategy, negative sampling hardness, margin value, and training stability. Since no stable final metric line was captured in this run, the strategy remains a promising but unverified direction for this specific notebook state.
+
+\subsection{1D-CNN Versus GRU in Tabular-to-Sequence Adaptation}
+The 1D-CNN strategy treats each sample as an ordered feature signal and learns local motifs. This works well when local neighborhoods in feature index space approximate useful co-activation patterns. GRU, in contrast, assumes meaningful temporal recurrence. In this notebook, recurrent input was formed from pseudo-sequences rather than native event chronology. Therefore GRU faced a representation mismatch, while 1D-CNN benefited from simpler inductive assumptions that aligned better with available structure.
+
+\section{Error Dynamics, Decision Cost, and Threshold Policy}
+IDS deployment quality is not determined by AUC alone. Operational losses depend on the balance between false negatives (missed attacks) and false positives (analyst overload).
+
+\subsection{Cost-Oriented Risk View}
+Let the expected decision cost be
+\begin{equation}
+\mathcal{C} = c_{FN}\cdot FN + c_{FP}\cdot FP,
+\end{equation}
+where $c_{FN}$ and $c_{FP}$ encode operational impact. In most security operations centers, $c_{FN} \gg c_{FP}$ for critical assets. Under that regime, a model with slightly lower precision but materially lower FNR can be preferable.
+
+Using Notebook B diagnostics, FT-Transformer-Lite and MLP have much lower FNR than TabNet in this run. Therefore, for high-risk detection policy, FT/MLP-like configurations are more defensible than TabNet at the current thresholding state.
+
+\subsection{Why AUC and PR-AUC Should Be Read Together}
+AUC summarizes ranking quality over all thresholds, while PR-AUC emphasizes positive-class quality under imbalance. In intrusion datasets with dominant benign traffic, PR-AUC is often a more realistic summary for alert pipelines. The core-DL ranking remains consistent when moving from AUC to PR-AUC, increasing confidence that FT's lead is not an artifact of a single metric.
+
+\subsection{Threshold-Dependent Operating Regions}
+For each model, three practical operating regions can be defined:
+\begin{itemize}
+\item \textbf{Conservative}: high threshold, low false positives, higher miss rate.
+\item \textbf{Balanced}: moderate threshold tuned to analyst capacity.
+\item \textbf{Aggressive}: lower threshold for incident surge periods when misses are unacceptable.
+\end{itemize}
+
+The notebook outputs provide enough evidence to infer that TabNet currently sits in an overly conservative region for attack recall, while FT and MLP maintain a more useful balance.
+
+\subsection{Minority-Class Attribution and Confidence Gating}
+Notebook A multi-class outputs show minority precision instability despite high recall in some rare classes. This is a standard high-imbalance failure mode: the model is willing to assign minority labels but with noisy boundaries. A robust mitigation is confidence gating:
+\begin{itemize}
+\item if confidence is high, auto-route label;
+\item if confidence is low for rare classes, escalate as ``suspicious attack'' with analyst review.
+\end{itemize}
+
+This preserves detection sensitivity while reducing false certainty in low-support classes.
+
+\section{Objective-Driven Model Selection Matrix}
+To translate the combined evidence into concrete design choices, Table~\ref{tab:selection_matrix} maps common operational objectives to method choices.
+
+\begin{table*}[!t]
+\caption{Objective-Driven Selection Matrix from Completed Evidence}
+\label{tab:selection_matrix}
+\centering
+\begin{tabular}{p{3.0cm}p{2.5cm}p{4.2cm}p{5.0cm}}
+\toprule
+Objective & Preferred model family & Why supported by current evidence & Main caveat \\
+\midrule
+Highest stable binary quality at scale & LightGBM/XGBoost & Best overall AUC/F1 range in large-scale notebook; consistent training stability & Less flexible for representation transfer than deep encoders \\
+Best core DL quality & FT-Transformer-Lite & Highest core-DL AUC/F1 and strongest balanced diagnostics & Lowest throughput among core DL models \\
+Low-latency deep baseline & MLP (or TabNet with retuning) & Fast inference with strong MLP quality in current run & MLP trails FT quality; TabNet requires substantial retuning for recall \\
+Simple auxiliary anomaly score & Autoencoder & Useful novelty signal when labels are scarce & Very low recall as standalone detector in this run \\
+Interpretable feature attribution & TabNet masks / FT permutation outputs & Completed interpretability outputs available for analyst context & Interpretability output is not a guarantee of best detection accuracy \\
+Hybrid production candidate & Boosting + selective deep re-scoring & Matches observed quality-speed trade-offs and allows staged compute budget & Requires orchestration and calibration across stages \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+This matrix emphasizes a key theme: ``best model'' depends on objective function, not on architecture class alone.
+
+\section{Extended Comparative Discussion by Deployment Scenario}
+\subsection{Scenario 1: High-Criticality Environments}
+In sectors where missed attacks have severe impact (critical infrastructure, financial core services), the primary requirement is minimizing false negatives subject to acceptable alert load. The combined evidence supports a boosting-first backbone with FT-based optional re-scoring for borderline high-risk events. This preserves strong baseline reliability while exploiting deep interaction modeling where it is most valuable.
+
+\subsection{Scenario 2: Analyst-Constrained Security Operations}
+Where human triage bandwidth is the bottleneck, precision and alert explainability become dominant. A practical configuration is:
+\begin{enumerate}
+\item gradient-boosting primary detector,
+\item conservative thresholding,
+\item interpretability payload (TabNet masks) attached only to escalated cases.
+\end{enumerate}
+This avoids overwhelming analysts while preserving contextual evidence.
+
+\subsection{Scenario 3: Resource-Constrained Inference}
+For edge or near-real-time deployments with strict latency constraints, MLP-class models are attractive due throughput. The quality gap versus FT must be evaluated against service-level objectives. If latency dominates and threat profile is moderate, MLP may be a justified trade. If risk is high, FT can be reserved for selective second-pass evaluation on a small candidate subset.
+
+\subsection{Scenario 4: Rare-Class Attribution Priority}
+If the mission emphasizes accurate attack-family differentiation (not only attack detection), the observed macro-weighted gap in Notebook A indicates that metric targets should prioritize macro objectives and class-wise confidence calibration. In such settings, model governance should track per-class drift and not rely solely on aggregate weighted F1.
+
+\subsection{Scenario 5: Research Iteration Mode}
+When the objective is discovery rather than immediate production, advanced strategies remain valuable even with partial completion. The correct practice is to isolate each strategy in controlled runtime sessions, log deterministic seeds, and produce completion ledgers. This converts exploratory notebooks into publishable experimental trails.
+
+\section{From Notebook Evidence to Research-Grade Conclusions}
+Three meta-level conclusions emerge from the integrated analysis.
+
+\subsection{Conclusion Theme 1: Tabular Bias Still Dominates in This Dataset Geometry}
+The strongest completed results remain tree-based. This is not a generic statement against deep learning; it is evidence that for this feature representation and preprocessing regime, tabular boosting has the closest inductive fit and most stable optimization profile.
+
+\subsection{Conclusion Theme 2: Deep Models Add Targeted, Not Uniform, Advantage}
+Deep learning contributes selectively:
+\begin{itemize}
+\item FT improves interaction-heavy discrimination.
+\item CNN gives a practical intermediate option.
+\item Interpretability modules improve analyst context.
+\end{itemize}
+These are concrete gains, but they do not yet overturn the boosting baseline under current completed evidence.
+
+\subsection{Conclusion Theme 3: Execution Stability Is Part of Scientific Validity}
+Notebook-based research often under-reports runtime fragility. Here, explicit partial-status reporting makes a critical methodological point: results are only as reliable as the completed, repeatable execution trace. For IDS research intended for deployment, system stability and experiment completeness are part of model quality, not separate concerns.
+
+\section{Protocol for Completing Advanced Experiments to Publication Standard}
+The advanced strategy block (A--E) is scientifically valuable, but partial execution currently limits comparative claims. This section defines a concrete completion protocol so the next run can produce publication-grade evidence with minimal ambiguity.
+
+\subsection{Deterministic Execution Envelope}
+For each strategy, the runtime envelope should be fixed before training:
+\begin{itemize}
+\item deterministic random seeds for data split, model initialization, and mini-batch shuffling,
+\item fixed package versions and hardware profile logging,
+\item explicit maximum memory budget and batch-size policy,
+\item automatic persistence of intermediate checkpoints and metric snapshots.
+\end{itemize}
+
+This reduces the chance that a strategy appears weak due to environment instability rather than method quality.
+
+\subsection{Evidence Tiers for Run Completion}
+To avoid binary ``done/not-done'' labeling, experiment evidence can be graded in tiers:
+\begin{itemize}
+\item \textbf{Tier 0}: code present but no successful metric output.
+\item \textbf{Tier 1}: partial execution with some outputs, but interrupted or unstable.
+\item \textbf{Tier 2}: full execution once with complete metrics and artifacts.
+\item \textbf{Tier 3}: repeated execution with stable variance across reruns.
+\end{itemize}
+
+Under this framework, the current notebook state is best interpreted as mixed-tier evidence: several strategies already satisfy Tier 2, while others remain at Tier 0 or Tier 1.
+
+\subsection{Minimum Artifact Contract per Strategy}
+Each advanced strategy should produce a mandatory artifact bundle before it is included in final leaderboard analysis. Table~\ref{tab:artifact_contract} formalizes this requirement.
+
+\begin{table*}[!t]
+\caption{Minimum Artifact Contract for Advanced Strategy Acceptance}
+\label{tab:artifact_contract}
+\centering
+\begin{tabular}{p{1.0cm}p{2.6cm}p{4.8cm}p{5.0cm}}
+\toprule
+ID & Strategy & Required artifacts for acceptance & Current notebook status interpretation \\
+\midrule
+A & Autoencoder & Final metrics line, reconstruction-threshold policy, confusion summary, saved predictions & Completed once (eligible for Tier 2) \\
+B & Siamese & Pair sampling config, embedding evaluation metric, final classifier or distance-threshold report & Inconclusive (Tier 0/1) \\
+C & 1D-CNN & Final metrics, training curve, inference latency, saved model state & Completed once (eligible for Tier 2) \\
+D & GRU sequence & Sequence-construction spec, final metrics, ablation versus sequence length, saved state & Completed once (eligible for Tier 2) \\
+E & TabNet explainability & Global feature importance export, local explanation examples, reproducibility seed log & Completed explainability outputs (Tier 2 for interpretability objective) \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+This contract prevents a common research error: comparing fully evaluated models against partially evaluated prototypes.
+
+\subsection{Stability Metrics Beyond Accuracy}
+For advanced reruns, at least three stability indicators should be reported in addition to standard quality metrics:
+\begin{equation}
+S_{comp}=\frac{N_{complete}}{N_{planned}},
+\end{equation}
+\begin{equation}
+S_{repeat}=1-\frac{\sigma(F_1)}{\mu(F_1)},
+\end{equation}
+\begin{equation}
+S_{runtime}=\frac{N_{no\ crash}}{N_{runs}},
+\end{equation}
+where $S_{comp}$ captures completion ratio, $S_{repeat}$ captures cross-run consistency, and $S_{runtime}$ captures operational reliability. A strategy should be considered deployment-candidate only when all three are acceptable, not only when one isolated run has high AUC.
+
+\subsection{Failure Taxonomy and Mitigation Plan}
+Observed interruptions suggest three failure classes:
+\begin{itemize}
+\item \textbf{Memory pressure}: solved via adaptive batch sizing and streamed inference.
+\item \textbf{Session instability}: solved via per-strategy isolated runtime sessions.
+\item \textbf{Dependency/setup issues}: solved via pinned environment manifests and preflight checks.
+\end{itemize}
+
+For publication-quality claims, each rerun should include a short failure ledger that records whether any of these classes occurred and how they were handled.
+
+\subsection{Why This Protocol Matters for the Current Study}
+Without protocolized completion, advanced strategy comparisons can accidentally reward whichever cell happened to finish in a given runtime. The protocol above ensures the next iteration answers the real research question: whether strategy design, not runtime luck, explains performance differences.
+
+\section{Governance and Human-in-the-Loop Operation}
+Model quality in IDS is inseparable from operational governance. A high-scoring detector that cannot be trusted by analysts or audited under drift is not a practical security control.
+
+\subsection{Alert Triage and Explainability Payloads}
+When analyst time is scarce, explanations should be concise and decision-linked:
+\begin{itemize}
+\item top contributing features for each high-risk flow,
+\item confidence band (high/medium/low) tied to escalation policy,
+\item provenance stamp identifying model version and threshold profile.
+\end{itemize}
+
+This reduces cognitive overhead and helps analysts verify whether model decisions align with network context.
+
+\subsection{Drift Monitoring}
+The CIC benchmark is static, while production traffic is not. A robust deployment should monitor:
+\begin{itemize}
+\item feature drift (distributional changes),
+\item label drift (attack prevalence shifts),
+\item decision drift (sudden changes in predicted class mix).
+\end{itemize}
+
+If drift exceeds policy thresholds, the system should trigger recalibration or controlled retraining before performance degradation becomes operationally visible.
+
+\subsection{Risk-Managed Automation}
+For high-impact labels and low-support classes, full automation can be risky. A staged autonomy policy is preferable:
+\begin{enumerate}
+\item auto-action for high-confidence, high-support detections,
+\item analyst approval for low-confidence minority-class attributions,
+\item continuous audit sampling even for high-confidence predictions.
+\end{enumerate}
+
+This balances response speed with accountability.
+
+\subsection{Auditability as a First-Class Requirement}
+Every prediction used for incident handling should be reconstructible from immutable artifacts: model hash, feature vector snapshot, threshold profile, and explanation payload. This is especially important when combining boosting and deep models in staged pipelines, because responsibility for a final decision may span multiple components.
+
+\section{Deployment Blueprint from Combined Evidence}
+A practical architecture consistent with all completed results is:
+
+\begin{enumerate}
+\item \textbf{Stage 1 (Primary binary scoring)}: LightGBM/XGBoost detector for high-stability ranking and threshold control.
+\item \textbf{Stage 2 (Optional deep re-scoring)}: FT-Transformer-Lite on high-risk subset when additional discrimination is worth latency overhead.
+\item \textbf{Stage 3 (Attribution)}: Multi-class LightGBM, with class-aware confidence policy for minority labels.
+\item \textbf{Stage 4 (Analyst features)}: TabNet/FT interpretability exports as auxiliary context, not as sole decision criterion.
+\end{enumerate}
+
+For rare classes, class-wise confidence gates are recommended before automatic escalation because high recall does not imply reliable precision.
+
+\section{Threats to Validity}
+\subsection{Cross-Notebook Comparability}
+Notebook A and B are not perfectly aligned experiments: data sampling, runtime, and task settings differ. Cross-family comparisons are therefore directional.
+
+\subsection{Partial Advanced Execution}
+Several advanced strategies were not fully completed due runtime instability. Any ranking that includes those strategies must remain provisional.
+
+\subsection{Temporal Semantics}
+Sequence modeling quality depends on sequence construction. Pseudo-sequences from sorted rows are useful but not equivalent to true host/session event streams.
+
+\subsection{Dataset Generalization}
+CIC-derived flow corpora are strong benchmarks but not guaranteed to represent all enterprise traffic distributions.
+
+\section{Future Work}
+The highest-value next steps are:
+
+\begin{enumerate}
+\item Complete a clean rerun of advanced strategy B in a fresh runtime with memory monitoring.
+\item Harmonize Notebook A and B splits for strict cross-family benchmarking.
+\item Add calibration and threshold optimization studies for minority-label precision control.
+\item Evaluate true sequence construction by source host/session windows for recurrent models.
+\item Benchmark end-to-end latency in realistic streaming deployment conditions.
+\end{enumerate}
+
+\section{Conclusion}
+This integrated analysis provides a clear, evidence-constrained answer to the project question. In the current executed state, gradient boosting is the most reliable high-performance baseline for both binary detection and multi-class attribution at scale. Deep learning adds meaningful value in specific ways: FT-Transformer-Lite provides the strongest core deep performance; 1D-CNN offers a practical quality-speed compromise; TabNet contributes interpretability artifacts; and Siamese metric learning remains a promising direction that requires stable reruns for final verification.
+
+Most importantly, the report shows \emph{why} these outcomes occurred. Model behavior is explained by fit between method inductive bias and tabular flow geometry, class imbalance, sequence realism, and runtime constraints. The resulting recommendation is not to replace boosted trees wholesale, but to adopt a layered IDS architecture where trees provide stable backbone performance and selected deep components are added where they produce measurable, operationally justified gains.
+
+\section*{Reproducibility Statement}
+All quantitative claims in this manuscript are taken from stored notebook outputs available in the project workspace. Missing or failed cells are explicitly labeled and not converted into inferred performance claims.
+
+\bibliographystyle{IEEEtran}
+\bibliography{ieee_nids_notebooks_grounded_refs}
+
+\end{document}

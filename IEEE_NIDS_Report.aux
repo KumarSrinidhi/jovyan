@@ -1,0 +1,91 @@
+\relax 
+\citation{lashkari2017}
+\citation{chen2016xgboost}
+\citation{ke2017lightgbm}
+\citation{chen2016xgboost}
+\citation{panigrahi2018}
+\@writefile{toc}{\contentsline {section}{\numberline {I}Introduction}{1}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {II}Related Work}{1}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-A}}Gradient Boosting for Network Security}{1}{}\protected@file@percent }
+\citation{arik2021tabnet}
+\citation{gorishniy2021}
+\citation{hindy2018}
+\citation{sharafaldin2018}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-B}}Deep Learning for NIDS}{2}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-C}}Class Imbalance in Intrusion Detection}{2}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {III}Dataset and Preprocessing}{2}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-A}}CIC-IDS Collection}{2}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-B}}Preprocessing Pipeline}{2}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces CIC-IDS 2017--2019 class distribution on a log scale. Note the four-order-of-magnitude imbalance between Benign and rare attack classes such as Portscan and Webattack.}}{2}{}\protected@file@percent }
+\providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
+\newlabel{fig:classdist}{{1}{2}{}{figure.1}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {I}{\ignorespaces CIC-IDS Dataset Class Distribution}}{2}{}\protected@file@percent }
+\newlabel{tab:classdist}{{I}{2}{}{table.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-C}}Data Splitting Strategy}{2}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {IV}Methodology}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-A}}Gradient Boosting Models}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {IV-A}1}LightGBM}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {IV-A}2}XGBoost}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-B}}Deep Learning Architectures}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {IV-B}1}MLP Baseline}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {IV-B}2}TabNet}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {IV-B}3}FT-Transformer-Lite}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {IV-B}4}1D-CNN}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {IV-B}5}GRU}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {IV-B}6}Autoencoder for Anomaly Detection}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {IV-B}7}Siamese Metric Learning}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {V}Experiments and Results}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-A}}Binary Intrusion Detection (Task~1)}{3}{}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {II}{\ignorespaces Binary Intrusion Detection --- All Models (Test Set)}}{3}{}\protected@file@percent }
+\newlabel{tab:binary}{{II}{3}{}{table.2}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces LightGBM vs. XGBoost on five binary detection metrics. LightGBM outperforms across all dimensions.}}{3}{}\protected@file@percent }
+\newlabel{fig:binary_gb}{{2}{3}{}{figure.2}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Deep learning model performance (AUC, F\textsubscript  {1}, Balanced Accuracy) on the binary CIC-IDS task. TabNet consistently leads.}}{4}{}\protected@file@percent }
+\newlabel{fig:dl_binary}{{3}{4}{}{figure.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-B}}ROC and Precision--Recall Curves}{4}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-C}}Binary Confusion Matrices}{4}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-D}}Multi-Class Attack Classification (Task~2)}{4}{}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {III}{\ignorespaces Multi-Class Attack Classification --- Summary (Test Set)}}{4}{}\protected@file@percent }
+\newlabel{tab:multiclass}{{III}{4}{}{table.3}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces ROC curves for all eight classifiers on the binary detection task. LightGBM achieves AUC~$=0.9973$, the highest across all models.}}{4}{}\protected@file@percent }
+\newlabel{fig:roc}{{4}{4}{}{figure.4}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Precision--Recall curves for all models. High PR-AUC values confirm the strong performance even under class imbalance.}}{4}{}\protected@file@percent }
+\newlabel{fig:pr}{{5}{4}{}{figure.5}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces LightGBM binary confusion matrix (log-scaled colour). Of~1.28M benign test flows,~1.22M are correctly classified. Recall on attacks reaches~95.6\%.}}{5}{}\protected@file@percent }
+\newlabel{fig:cm_bin}{{6}{5}{}{figure.6}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces Per-class $F_1$-score comparison for LightGBM and XGBoost on the eight-class CIC-IDS task. The dashed line marks the $0.80$ threshold. Rare classes (Infiltration, Portscan) fall markedly below it.}}{5}{}\protected@file@percent }
+\newlabel{fig:multiclass_f1}{{7}{5}{}{figure.7}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {8}{\ignorespaces LightGBM multi-class confusion matrix (row-normalised). Near-diagonal structure confirms excellent performance on common classes; off-diagonal mass for Infiltration and Portscan highlights the rare-class challenge.}}{5}{}\protected@file@percent }
+\newlabel{fig:cm_multi}{{8}{5}{}{figure.8}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-E}}Feature Importance Analysis}{5}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-F}}Inference Throughput}{5}{}\protected@file@percent }
+\citation{gorishniy2021}
+\citation{gorishniy2021}
+\@writefile{lof}{\contentsline {figure}{\numberline {9}{\ignorespaces LightGBM top-15 feature importance by gain. Backward TCP window size and inter-arrival timing features dominate, reflecting the temporal irregularity of attack traffic.}}{6}{}\protected@file@percent }
+\newlabel{fig:featimp}{{9}{6}{}{figure.9}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {10}{\ignorespaces Inference throughput (samples/sec, higher is better). LightGBM processes $>$2M flows/sec on CPU; transformer-based models are $5\times $ slower even on GPU.}}{6}{}\protected@file@percent }
+\newlabel{fig:speed}{{10}{6}{}{figure.10}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-G}}Training Convergence}{6}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {11}{\ignorespaces Validation loss convergence curves for all six deep learning models. TabNet and FT-Transformer converge fastest; the Autoencoder's higher residual reflects unsupervised training.}}{6}{}\protected@file@percent }
+\newlabel{fig:trainloss}{{11}{6}{}{figure.11}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-H}}Multi-Dimensional Comparison}{6}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {VI}Discussion}{6}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VI-A}}Gradient Boosting vs.\ Deep Learning}{6}{}\protected@file@percent }
+\bibcite{arik2021tabnet}{1}
+\bibcite{chen2016xgboost}{2}
+\bibcite{ke2017lightgbm}{3}
+\bibcite{gorishniy2021}{4}
+\bibcite{sharafaldin2018}{5}
+\bibcite{lashkari2017}{6}
+\bibcite{hindy2018}{7}
+\bibcite{panigrahi2018}{8}
+\bibcite{vaswani2017}{9}
+\bibcite{lecun1998}{10}
+\@writefile{lof}{\contentsline {figure}{\numberline {12}{\ignorespaces Multi-dimensional model comparison: Macro $F_1$ vs.\ Weighted $F_1$ (bubble size $\propto $ inference throughput). Gradient boosting models dominate all three dimensions simultaneously.}}{7}{}\protected@file@percent }
+\newlabel{fig:scatter}{{12}{7}{}{figure.12}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VI-B}}Architectural Insights from Deep Learning}{7}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VI-C}}Rare Class Detection Strategies}{7}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VI-D}}Limitations and Future Directions}{7}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {VII}Conclusion}{7}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{References}{7}{}\protected@file@percent }
+\gdef \@abspage@last{7}
